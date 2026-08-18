@@ -137,6 +137,14 @@
   .jef-progress-track{width:100%;max-width:320px;height:8px;background:var(--graybg);border-radius:999px;overflow:hidden;margin-top:4px}
   .jef-progress-fill{height:100%;background:var(--celeste);transition:width .2s}
 
+  .jef-filters { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:12px 0; padding:10px 14px; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); }
+  .jef-filters .filter-group { display:flex; align-items:center; gap:6px; }
+  .jef-filters label { font-size:11px; font-weight:700; color:var(--navy); text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; }
+  .pill { padding:5px 12px; border-radius:999px; border:1px solid var(--border); background:#fff; color:var(--text); font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .pill.active { background:var(--navy); color:#fff; border-color:var(--navy); }
+  .pill:hover:not(.active) { background:var(--celestebg); border-color:var(--celeste); }
+  .jef-sort { padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:12.5px; color:var(--text); background:#fff; cursor:pointer; }
+
   .jef-person-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
   .jef-person-hdr{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;user-select:none;flex-wrap:wrap}
   .jef-person-hdr:hover{background:var(--celestebg)}
@@ -231,6 +239,32 @@
         </div>
         <button id="jefLoadBtn" class="jef-load-btn" onclick="loadJefaturas()">Cargar sprint actual</button>
         <span id="jefConnStatus" class="conn-status"></span>
+      </div>
+
+      <div class="jef-filters" id="jefFilters" style="display:none">
+        <div class="filter-group">
+          <label>Grupo</label>
+          <button class="pill active" onclick="setJefFilter('grupo','Todos',this)">Todos</button>
+          <button class="pill" onclick="setJefFilter('grupo','G1',this)">G1</button>
+          <button class="pill" onclick="setJefFilter('grupo','G2',this)">G2</button>
+        </div>
+        <div class="filter-group">
+          <label>Estado</label>
+          <button class="pill active" onclick="setJefFilter('estado','Todos',this)">Todos</button>
+          <button class="pill" onclick="setJefFilter('estado','Alerta',this)">🔴 Alerta</button>
+          <button class="pill" onclick="setJefFilter('estado','Margen',this)">🟡 Margen</button>
+          <button class="pill" onclick="setJefFilter('estado','Dentro',this)">🟢 Dentro</button>
+          <button class="pill" onclick="setJefFilter('estado','Variable',this)">Variable</button>
+        </div>
+        <div class="filter-group" style="margin-left:auto">
+          <label>Ordenar</label>
+          <select class="jef-sort" id="jefSortSel" onchange="setJefSort(this.value)">
+            <option value="nombre">Nombre A→Z</option>
+            <option value="horas-desc">Horas activas ↓</option>
+            <option value="horas-asc">Horas activas ↑</option>
+            <option value="estado">Estado</option>
+          </select>
+        </div>
       </div>
 
       <div id="jef-kpi" class="summary" style="display:none"></div>
@@ -1235,6 +1269,58 @@ function getStaffInfo(contact) {
 const JEF_AREAS = ['DI', 'Producción', 'Soporte'];
 let jefSelectedArea = 'DI';
 let jefLoading = false;
+let jefFilter = { grupo: 'Todos', estado: 'Todos', orden: 'nombre' };
+let lastJefData = null;
+
+// Determina el estado de carga de una persona (mismo criterio usado en el KPI de alerta G1).
+function computeJefEstado(activeHours, staffInfo) {
+  if (staffInfo && staffInfo.grupo === 'G1') {
+    if (activeHours >= 37.5) return { loadClass: 'jef-load-green', loadEmoji: '🟢', loadLabel: 'Dentro' };
+    if (activeHours >= 36.5) return { loadClass: 'jef-load-amber', loadEmoji: '🟡', loadLabel: 'Margen' };
+    return { loadClass: 'jef-load-red', loadEmoji: '🔴', loadLabel: 'Alerta' };
+  }
+  if (staffInfo && staffInfo.grupo === 'G2') {
+    if (activeHours >= 37.5) return { loadClass: 'jef-load-green', loadEmoji: '🟢', loadLabel: 'Dentro' };
+    return { loadClass: 'jef-load-amber', loadEmoji: '🟡', loadLabel: 'Variable' };
+  }
+  if (activeHours < 20) return { loadClass: 'jef-load-red', loadEmoji: '🔴', loadLabel: 'Necesita tareas' };
+  if (activeHours < 40) return { loadClass: 'jef-load-amber', loadEmoji: '🟡', loadLabel: 'Carga parcial' };
+  return { loadClass: 'jef-load-green', loadEmoji: '🟢', loadLabel: 'Jornada completa' };
+}
+
+function setJefFilter(key, val, btn) {
+  jefFilter[key] = val;
+  const group = btn.parentElement;
+  group.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  if (lastJefData) renderJefaturas(lastJefData);
+}
+
+function setJefSort(val) {
+  jefFilter.orden = val;
+  if (lastJefData) renderJefaturas(lastJefData);
+}
+
+function resetJefFilters() {
+  jefFilter = { grupo: 'Todos', estado: 'Todos', orden: 'nombre' };
+  document.querySelectorAll('#jefFilters .filter-group .pill').forEach(p => {
+    p.classList.toggle('active', p.textContent.trim() === 'Todos');
+  });
+  const sortSel = document.getElementById('jefSortSel');
+  if (sortSel) sortSel.value = 'nombre';
+}
+
+function applyJefFilter(people) {
+  let result = [...people];
+  if (jefFilter.grupo !== 'Todos') result = result.filter(p => (p.staffInfo?.grupo || 'G1') === jefFilter.grupo);
+  if (jefFilter.estado !== 'Todos') result = result.filter(p => p.estado === jefFilter.estado);
+  const estadoOrder = { 'Alerta': 0, 'Margen': 1, 'Dentro': 2, 'Variable': 3 };
+  if (jefFilter.orden === 'nombre') result.sort((a, b) => fullName(a.contact).localeCompare(fullName(b.contact), 'es'));
+  if (jefFilter.orden === 'horas-desc') result.sort((a, b) => b.activeHours - a.activeHours);
+  if (jefFilter.orden === 'horas-asc') result.sort((a, b) => a.activeHours - b.activeHours);
+  if (jefFilter.orden === 'estado') result.sort((a, b) => (estadoOrder[a.estado] ?? 9) - (estadoOrder[b.estado] ?? 9));
+  return result;
+}
 
 function switchTab(tab) {
   const isJef = tab === 'jefaturas';
@@ -1278,6 +1364,8 @@ async function loadJefaturas() {
   status.textContent = '';
   document.getElementById('jef-kpi').style.display = 'none';
   document.getElementById('jef-content').innerHTML = '';
+  document.getElementById('jefFilters').style.display = 'none';
+  resetJefFilters();
   const loading = document.getElementById('jef-loading');
   const loadingText = document.getElementById('jefLoadingText');
   const progressFill = document.getElementById('jefProgressFill');
@@ -1300,6 +1388,7 @@ async function loadJefaturas() {
       progressFill.style.width = (done / total * 100) + '%';
     });
 
+    lastJefData = personTaskMap;
     renderJefaturas(personTaskMap);
   } catch (e) {
     document.getElementById('jef-content').innerHTML = `<div class="state">✖ Error cargando tareas: ${escapeHtml(wrikeErrorMessage(e))}</div>`;
@@ -1347,10 +1436,11 @@ function renderJefaturas(personTaskMap) {
       g2Count++; g2Hours += activeHours;
     }
 
-    people.push({ contact, tasks: filtered, activeHours, completedHours, staffInfo });
+    const estado = computeJefEstado(activeHours, staffInfo).loadLabel;
+    people.push({ contact, tasks: filtered, activeHours, completedHours, staffInfo, estado });
   });
 
-  people.sort((a, b) => fullName(a.contact).localeCompare(fullName(b.contact), 'es'));
+  document.getElementById('jefFilters').style.display = people.length ? 'flex' : 'none';
 
   const w = isoWeekNumber(selectedSprint.start);
   const kpiEl = document.getElementById('jef-kpi');
@@ -1393,24 +1483,20 @@ function renderJefaturas(personTaskMap) {
     contentEl.innerHTML = `<div class="state">Nadie tiene tareas de ${escapeHtml(jefSelectedArea)} en Sprint S${w}.</div>`;
     return;
   }
-  contentEl.innerHTML = people.map((p, i) => renderPersonJefCard(p.contact, p.tasks, p.activeHours, p.completedHours, p.staffInfo, i)).join('');
+
+  const filtered = applyJefFilter(people);
+  if (!filtered.length) {
+    contentEl.innerHTML = `<div class="state">Ninguna persona coincide con los filtros seleccionados.</div>`;
+    return;
+  }
+  contentEl.innerHTML = filtered.map((p, i) => renderPersonJefCard(p.contact, p.tasks, p.activeHours, p.completedHours, p.staffInfo, i)).join('');
 }
 
 const CONTRATO_BADGE_CLASS = { 'Planta':'badge-planta', 'Full Time':'badge-fulltime', 'Indefinido':'badge-indefinido', 'Por Horas':'badge-porhoras' };
 
 function renderPersonJefCard(contact, tasks, activeHours, completedHours, staffInfo, idx) {
   const bodyId = 'jef-person-' + idx;
-  let loadClass, loadEmoji, loadLabel;
-  if (staffInfo && staffInfo.grupo === 'G1') {
-    if (activeHours >= 37.5) { loadClass = 'jef-load-green'; loadEmoji = '🟢'; loadLabel = 'Dentro'; }
-    else if (activeHours >= 36.5) { loadClass = 'jef-load-amber'; loadEmoji = '🟡'; loadLabel = 'Margen'; }
-    else { loadClass = 'jef-load-red'; loadEmoji = '🔴'; loadLabel = 'Alerta'; }
-  } else if (staffInfo && staffInfo.grupo === 'G2') {
-    if (activeHours >= 37.5) { loadClass = 'jef-load-green'; loadEmoji = '🟢'; loadLabel = 'Dentro'; }
-    else { loadClass = 'jef-load-amber'; loadEmoji = '🟡'; loadLabel = 'Variable'; }
-  } else if (activeHours < 20) { loadClass = 'jef-load-red'; loadEmoji = '🔴'; loadLabel = 'Necesita tareas'; }
-  else if (activeHours < 40) { loadClass = 'jef-load-amber'; loadEmoji = '🟡'; loadLabel = 'Carga parcial'; }
-  else { loadClass = 'jef-load-green'; loadEmoji = '🟢'; loadLabel = 'Jornada completa'; }
+  const { loadClass, loadEmoji, loadLabel } = computeJefEstado(activeHours, staffInfo);
 
   const contratoBadge = staffInfo
     ? `<span class="badge ${CONTRATO_BADGE_CLASS[staffInfo.contrato] || ''}">${escapeHtml(staffInfo.contrato)}</span> <span class="badge ${staffInfo.grupo === 'G1' ? 'badge-g1' : 'badge-g2'}">${escapeHtml(staffInfo.grupo)}</span>`
