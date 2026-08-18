@@ -820,6 +820,9 @@ function renderSummary(byStatus) {
   const deferred = byStatus['Deferred'] || [];
   const totalActiveHours = active.reduce((sum, x) => sum + effortHours(x.task), 0);
   const completedHours = completed.reduce((sum, x) => sum + effortHours(x.task), 0);
+  const deferredHours = deferred.reduce((sum, x) => sum + effortHours(x.task), 0);
+  const totalHours = totalActiveHours + completedHours + deferredHours;
+  const totalTasks = active.length + completed.length + deferred.length;
   const todayStr = ymd(new Date());
   const overdueCount = active.filter(x => { const d = taskDueYmd(x.task); return d && d < todayStr; }).length;
   const w = isoWeekNumber(selectedSprint.start);
@@ -827,24 +830,24 @@ function renderSummary(byStatus) {
   summaryEl.style.display = 'grid';
   summaryEl.innerHTML = `
     <div class="kpi accent">
-      <div class="label">Por hacer — S${w}</div>
-      <div class="val">${active.length}</div>
-      <div class="sub">${overdueCount > 0 ? overdueCount + ' vencidas' : 'en el sprint'}</div>
-    </div>
-    <div class="kpi accent">
-      <div class="label">Horas estimadas</div>
+      <div class="label">Horas por hacer</div>
       <div class="val">${totalActiveHours.toFixed(1)}</div>
-      <div class="sub">effortAllocation activas</div>
+      <div class="sub">${overdueCount > 0 ? '⚠ ' + overdueCount + ' vencidas' : active.length + ' tareas activas'}</div>
     </div>
     <div class="kpi accent-green">
-      <div class="label">Finalizadas — S${w}</div>
-      <div class="val">${completed.length}</div>
-      <div class="sub">${completedHours.toFixed(1)} hrs completadas</div>
+      <div class="label">Horas finalizadas</div>
+      <div class="val">${completedHours.toFixed(1)}</div>
+      <div class="sub">${completed.length} tareas completadas</div>
     </div>
-    <div class="kpi" style="${deferred.length ? 'border-left:4px solid var(--amber)' : ''}">
-      <div class="label">Diferidas — S${w}</div>
-      <div class="val" style="${deferred.length ? 'color:var(--amber)' : ''}">${deferred.length}</div>
-      <div class="sub">en espera</div>
+    <div class="kpi">
+      <div class="label">Horas totales</div>
+      <div class="val">${totalHours.toFixed(1)}</div>
+      <div class="sub">Sprint S${w}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Tareas</div>
+      <div class="val">${totalTasks}</div>
+      <div class="sub">${active.length} por hacer · ${completed.length} finalizadas · ${deferred.length} diferidas</div>
     </div>`;
 }
 
