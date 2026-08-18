@@ -246,12 +246,11 @@ let isLoading = false;
 let selectedArea = '';     // '' = todas las áreas
 let areaContactIds = null; // null = sin filtro, Set<id> = personas del área seleccionada
 
-// Secciones por status
+// Secciones por status (Canceladas ocultas — no se muestran en el tablero)
 const STATUS_SECTIONS = [
   { key: 'Active',    label: 'Tareas por hacer', emoji: '🔵', defaultOpen: true  },
   { key: 'Completed', label: 'Finalizadas',       emoji: '✅', defaultOpen: true  },
-  { key: 'Deferred',  label: 'Diferidas',         emoji: '⏸',  defaultOpen: false },
-  { key: 'Cancelled', label: 'Canceladas',        emoji: '❌', defaultOpen: false }
+  { key: 'Deferred',  label: 'Diferidas',         emoji: '⏸',  defaultOpen: false }
 ];
 
 // ── WRIKE FETCH ──────────────────────────────────────────────────────────
@@ -784,6 +783,8 @@ function bucketize(tasks, sprint) {
 }
 
 // Re-renderiza desde allActiveTasks (ya en memoria) — no hace llamadas a Wrike.
+// Filtra por due date en el rango del sprint seleccionado; las Finalizadas usan
+// también su due date (no completedDate) para ubicarse en el sprint correcto.
 function renderFromCache() {
   if (!allActiveTasks.length) {
     document.getElementById('summary').style.display = 'none';
@@ -793,10 +794,18 @@ function renderFromCache() {
     return;
   }
   const tasksForArea = filteredByArea();
-  // Agrupar por status
+  const sprintStart = ymd(selectedSprint.start);
+  const sprintEnd   = ymd(selectedSprint.end);
+
+  // Solo tareas cuya due date cae dentro del sprint seleccionado
+  const inSprint = tasksForArea.filter(x => {
+    const due = taskDueYmd(x.task);
+    return due && due >= sprintStart && due <= sprintEnd;
+  });
+
   const byStatus = {};
   STATUS_SECTIONS.forEach(s => { byStatus[s.key] = []; });
-  tasksForArea.forEach(x => {
+  inSprint.forEach(x => {
     const s = x.task.status || 'Active';
     if (!byStatus[s]) byStatus[s] = [];
     byStatus[s].push(x);
@@ -810,16 +819,17 @@ function renderSummary(byStatus) {
   const completed = byStatus['Completed'] || [];
   const deferred = byStatus['Deferred'] || [];
   const totalActiveHours = active.reduce((sum, x) => sum + effortHours(x.task), 0);
+  const completedHours = completed.reduce((sum, x) => sum + effortHours(x.task), 0);
   const todayStr = ymd(new Date());
   const overdueCount = active.filter(x => { const d = taskDueYmd(x.task); return d && d < todayStr; }).length;
-  const sprintCount = active.filter(x => inSprintRange(taskDueYmd(x.task), selectedSprint)).length;
+  const w = isoWeekNumber(selectedSprint.start);
   const summaryEl = document.getElementById('summary');
   summaryEl.style.display = 'grid';
   summaryEl.innerHTML = `
     <div class="kpi accent">
-      <div class="label">Por hacer</div>
+      <div class="label">Por hacer — S${w}</div>
       <div class="val">${active.length}</div>
-      <div class="sub">${sprintCount} en sprint · ${overdueCount} vencidas</div>
+      <div class="sub">${overdueCount > 0 ? overdueCount + ' vencidas' : 'en el sprint'}</div>
     </div>
     <div class="kpi accent">
       <div class="label">Horas estimadas</div>
@@ -827,12 +837,12 @@ function renderSummary(byStatus) {
       <div class="sub">effortAllocation activas</div>
     </div>
     <div class="kpi accent-green">
-      <div class="label">Finalizadas</div>
+      <div class="label">Finalizadas — S${w}</div>
       <div class="val">${completed.length}</div>
-      <div class="sub">últimos 30 días</div>
+      <div class="sub">${completedHours.toFixed(1)} hrs completadas</div>
     </div>
     <div class="kpi" style="${deferred.length ? 'border-left:4px solid var(--amber)' : ''}">
-      <div class="label">Diferidas</div>
+      <div class="label">Diferidas — S${w}</div>
       <div class="val" style="${deferred.length ? 'color:var(--amber)' : ''}">${deferred.length}</div>
       <div class="sub">en espera</div>
     </div>`;
@@ -869,8 +879,6 @@ function taskTableRow(x, i, statusKey) {
       dateCell = '<span class="col-due backlog-tag">Sin fecha</span>';
     } else if (due < todayStr) {
       dateCell = `<span class="col-due overdue">⚠ ${fmtTaskDate(due)}</span>`;
-    } else if (inSprintRange(due, selectedSprint)) {
-      dateCell = `<span class="col-due" style="color:var(--blue);font-weight:700">🔵 ${fmtTaskDate(due)}</span>`;
     } else {
       dateCell = `<span class="col-due">${fmtTaskDate(due)}</span>`;
     }
@@ -1008,6 +1016,7 @@ function renderActiveBySprintGroups(tasks) {
 
 function renderStatusSections(byStatus) {
   const content = document.getElementById('content');
+  const w = isoWeekNumber(selectedSprint.start);
   let html = '';
   STATUS_SECTIONS.forEach(sec => {
     const tasks = byStatus[sec.key] || [];
@@ -1019,9 +1028,9 @@ function renderStatusSections(byStatus) {
     </div>
     <div id="${sId}-body" class="section-body${isOpen ? '' : ' collapsed'}">`;
     if (tasks.length) {
-      html += sec.key === 'Active' ? renderActiveBySprintGroups(tasks) : taskTableHtml(tasks, sec.key);
+      html += taskTableHtml(tasks, sec.key);
     } else {
-      html += `<div class="state">Sin tareas ${escapeHtml(sec.label.toLowerCase())}.</div>`;
+      html += `<div class="state">Sin tareas ${escapeHtml(sec.label.toLowerCase())} en Sprint S${w}.</div>`;
     }
     html += '</div>';
   });
