@@ -112,6 +112,31 @@
   .sprint-subgroup-hdr .n{background:var(--celestebg);color:var(--blue);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700}
   .sprint-subgroup-body.collapsed{display:none}
 
+  .tab-nav{margin-top:14px;display:flex;gap:8px}
+  .tab-btn{background:var(--card);border:1px solid var(--border);color:var(--navy);border-radius:6px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer}
+  .tab-btn:hover{background:var(--celestebg)}
+  .tab-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+
+  .jef-load-btn{background:var(--celeste);border:1px solid var(--celeste);color:#fff;border-radius:6px;padding:8px 16px;font-size:12.5px;font-weight:700;cursor:pointer}
+  .jef-load-btn:hover{background:#3182ce}
+  .jef-load-btn:disabled{opacity:.5;cursor:not-allowed}
+
+  .jef-progress-track{width:100%;max-width:320px;height:8px;background:var(--graybg);border-radius:999px;overflow:hidden;margin-top:4px}
+  .jef-progress-fill{height:100%;background:var(--celeste);transition:width .2s}
+
+  .jef-person-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
+  .jef-person-hdr{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;user-select:none;flex-wrap:wrap}
+  .jef-person-hdr:hover{background:var(--celestebg)}
+  .jef-person-name{font-weight:800;color:var(--navy);flex:1;min-width:140px}
+  .jef-hours{font-size:11.5px;color:var(--muted)}
+  .jef-load-dot{font-size:14px}
+  .jef-load-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  .jef-load-red{color:var(--red)}
+  .jef-load-amber{color:var(--amber)}
+  .jef-load-green{color:var(--green)}
+  .jef-person-hdr .n{background:var(--celestebg);color:var(--blue);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700}
+  .jef-person-body.collapsed{display:none}
+
   @media (max-width:600px){
     .hdr{flex-direction:column;align-items:flex-start}
     .controls{flex-direction:column;align-items:stretch}
@@ -149,6 +174,11 @@
       </div>
     </header>
 
+    <div class="tab-nav" id="tabNav" style="display:none">
+      <button class="tab-btn active" id="tabIndBtn" onclick="switchTab('individual')">👤 Vista Individual</button>
+      <button class="tab-btn" id="tabJefBtn" onclick="switchTab('jefaturas')">👥 Vista Jefaturas</button>
+    </div>
+
     <div id="controls" class="controls" style="display:none">
       <div class="sel-group">
         <label for="personSel">Persona</label>
@@ -168,6 +198,31 @@
     </div>
 
     <div id="content"></div>
+
+    <div id="jef-view" style="display:none">
+      <div id="jef-controls" class="controls">
+        <div class="sel-group">
+          <label for="jefAreaSel">Área</label>
+          <select id="jefAreaSel">
+            <option value="DI">DI</option>
+            <option value="Producción">Producción</option>
+            <option value="Soporte">Soporte</option>
+          </select>
+        </div>
+        <button id="jefLoadBtn" class="jef-load-btn" onclick="loadJefaturas()">Cargar sprint actual</button>
+        <span id="jefConnStatus" class="conn-status"></span>
+      </div>
+
+      <div id="jef-kpi" class="summary" style="display:none"></div>
+
+      <div id="jef-loading" class="loading" style="display:none">
+        <div class="spin"></div>
+        <div id="jefLoadingText">Cargando…</div>
+        <div class="jef-progress-track"><div class="jef-progress-fill" id="jefProgressFill" style="width:0%"></div></div>
+      </div>
+
+      <div id="jef-content"></div>
+    </div>
   </div>
 
   <div class="modal-bg" id="pinGate">
@@ -1045,12 +1100,202 @@ function exportExcel() {
   XLSX.writeFile(wb, `Tareas_${weekLabel}_${safeName}_${todayStr}.xlsx`);
 }
 
+// ── JEFATURAS VIEW ───────────────────────────────────────────────────────
+const JEF_AREAS = ['DI', 'Producción', 'Soporte'];
+let jefSelectedArea = 'DI';
+let jefLoading = false;
+
+function switchTab(tab) {
+  const isJef = tab === 'jefaturas';
+  document.getElementById('tabIndBtn').classList.toggle('active', !isJef);
+  document.getElementById('tabJefBtn').classList.toggle('active', isJef);
+  document.getElementById('controls').style.display = isJef ? 'none' : 'flex';
+  document.getElementById('jef-view').style.display = isJef ? 'block' : 'none';
+  if (isJef) {
+    document.getElementById('summary').style.display = 'none';
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'none';
+  } else {
+    document.getElementById('content').style.display = 'block';
+    if (allActiveTasks.length) renderFromCache();
+  }
+}
+
+// Ejecuta `worker` sobre cada item de `items` con a lo más `concurrency`
+// llamadas en vuelo simultáneamente, reportando progreso vía `onProgress`.
+async function runWithConcurrency(items, worker, concurrency, onProgress) {
+  let idx = 0, done = 0;
+  async function runNext() {
+    while (idx < items.length) {
+      const i = idx++;
+      await worker(items[i], i);
+      done++;
+      if (onProgress) onProgress(done, items.length);
+    }
+  }
+  const pool = Array.from({ length: Math.min(concurrency, items.length) }, runNext);
+  await Promise.all(pool);
+}
+
+async function loadJefaturas() {
+  if (jefLoading) return;
+  jefLoading = true;
+  jefSelectedArea = document.getElementById('jefAreaSel').value;
+  const btn = document.getElementById('jefLoadBtn');
+  const status = document.getElementById('jefConnStatus');
+  btn.disabled = true;
+  status.textContent = '';
+  document.getElementById('jef-kpi').style.display = 'none';
+  document.getElementById('jef-content').innerHTML = '';
+  const loading = document.getElementById('jef-loading');
+  const loadingText = document.getElementById('jefLoadingText');
+  const progressFill = document.getElementById('jefProgressFill');
+  loading.style.display = 'flex';
+  progressFill.style.width = '0%';
+  loadingText.textContent = `Cargando 0 de ${contacts.length} personas…`;
+
+  try {
+    const personTaskMap = new Map(); // contactId -> tareas crudas (dedup) de esa persona
+    await runWithConcurrency(contacts, async (contact) => {
+      const [rawAll, rawCompleted] = await Promise.all([
+        fetchAllTasksForContact(contact.id),
+        fetchCompletedTasksForContact(contact.id, 30)
+      ]);
+      const taskMap = new Map();
+      [...rawAll, ...rawCompleted].forEach(t => { if (!taskMap.has(t.id)) taskMap.set(t.id, t); });
+      personTaskMap.set(contact.id, Array.from(taskMap.values()));
+    }, 5, (done, total) => {
+      loadingText.textContent = `Cargando ${done} de ${total} personas…`;
+      progressFill.style.width = (done / total * 100) + '%';
+    });
+
+    renderJefaturas(personTaskMap);
+  } catch (e) {
+    document.getElementById('jef-content').innerHTML = `<div class="state">✖ Error cargando tareas: ${escapeHtml(wrikeErrorMessage(e))}</div>`;
+  } finally {
+    jefLoading = false;
+    btn.disabled = false;
+    loading.style.display = 'none';
+  }
+}
+
+// Filtra por due date en el sprint seleccionado + Área, agrupa por persona
+// responsable, y renderiza KPI de resumen + tarjetas colapsables.
+function renderJefaturas(personTaskMap) {
+  const sprintStart = ymd(selectedSprint.start);
+  const sprintEnd = ymd(selectedSprint.end);
+
+  const people = [];
+  let totalTasksCount = 0;
+  let totalHoursCount = 0;
+
+  contacts.forEach(contact => {
+    const rawTasks = personTaskMap.get(contact.id) || [];
+    const filtered = rawTasks.filter(t => {
+      const due = taskDueYmd(t);
+      if (!due || due < sprintStart || due > sprintEnd) return false;
+      return getTaskArea(t) === jefSelectedArea;
+    });
+    if (!filtered.length) return;
+
+    const activeTasks = filtered.filter(t => (t.status || 'Active') === 'Active');
+    const completedTasks = filtered.filter(t => t.status === 'Completed');
+    const activeHours = activeTasks.reduce((s, t) => s + effortHours(t), 0);
+    const completedHours = completedTasks.reduce((s, t) => s + effortHours(t), 0);
+
+    totalTasksCount += filtered.length;
+    totalHoursCount += activeHours + completedHours;
+
+    people.push({ contact, tasks: filtered, activeHours, completedHours });
+  });
+
+  people.sort((a, b) => fullName(a.contact).localeCompare(fullName(b.contact), 'es'));
+
+  const w = isoWeekNumber(selectedSprint.start);
+  const kpiEl = document.getElementById('jef-kpi');
+  kpiEl.style.display = 'grid';
+  kpiEl.innerHTML = `
+    <div class="kpi accent">
+      <div class="label">Personas</div>
+      <div class="val">${people.length}</div>
+      <div class="sub">con tareas de ${escapeHtml(jefSelectedArea)}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Tareas</div>
+      <div class="val">${totalTasksCount}</div>
+      <div class="sub">Sprint S${w}</div>
+    </div>
+    <div class="kpi accent-green">
+      <div class="label">Horas totales</div>
+      <div class="val">${totalHoursCount.toFixed(1)}</div>
+      <div class="sub">activas + finalizadas</div>
+    </div>`;
+
+  const contentEl = document.getElementById('jef-content');
+  if (!people.length) {
+    contentEl.innerHTML = `<div class="state">Nadie tiene tareas de ${escapeHtml(jefSelectedArea)} en Sprint S${w}.</div>`;
+    return;
+  }
+  contentEl.innerHTML = people.map((p, i) => renderPersonJefCard(p.contact, p.tasks, p.activeHours, p.completedHours, i)).join('');
+}
+
+function renderPersonJefCard(contact, tasks, activeHours, completedHours, idx) {
+  const bodyId = 'jef-person-' + idx;
+  let loadClass, loadEmoji, loadLabel;
+  if (activeHours < 20) { loadClass = 'jef-load-red'; loadEmoji = '🔴'; loadLabel = 'Necesita tareas'; }
+  else if (activeHours < 40) { loadClass = 'jef-load-amber'; loadEmoji = '🟡'; loadLabel = 'Carga parcial'; }
+  else { loadClass = 'jef-load-green'; loadEmoji = '🟢'; loadLabel = 'Jornada completa'; }
+
+  const sorted = [...tasks].sort((a, b) => (taskDueYmd(a) || '9999-99-99').localeCompare(taskDueYmd(b) || '9999-99-99'));
+
+  const rows = sorted.map((t, i) => {
+    const due = taskDueYmd(t);
+    const dateTxt = due ? fmtTaskDate(due) : 'Sin fecha';
+    const hrs = effortHours(t) > 0 ? effortHours(t).toFixed(1) + ' hrs' : '—';
+    const area = getTaskArea(t);
+    const statusBadge = `<span class="badge ${STATUS_CLASS[t.status] || 'badge-active'}">${escapeHtml(STATUS_LABEL[t.status] || t.status || '')}</span>`;
+    const titleHtml = t.permalink
+      ? `<a class="task-link" href="${escapeHtml(t.permalink)}" target="_blank" rel="noopener">${escapeHtml(t.title || '(sin título)')}</a>`
+      : `<span class="task-title-plain">${escapeHtml(t.title || '(sin título)')}</span>`;
+    return `<tr>
+      <td class="col-num">${i + 1}</td>
+      <td>${titleHtml}</td>
+      <td><span class="area-badge ${areaCssClass(area)}">${escapeHtml(area || '—')}</span></td>
+      <td class="col-effort">${hrs}</td>
+      <td>${statusBadge}</td>
+      <td class="col-due">${escapeHtml(dateTxt)}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="jef-person-card">
+    <div class="jef-person-hdr" onclick="toggleSubgroup('${bodyId}')">
+      <span class="section-toggle-icon" id="${bodyId}-arrow">▶</span>
+      <span class="jef-person-name">${escapeHtml(fullName(contact))}</span>
+      <span class="jef-hours">${activeHours.toFixed(1)}h activas · ${completedHours.toFixed(1)}h completadas</span>
+      <span class="jef-load-dot">${loadEmoji}</span>
+      <span class="jef-load-label ${loadClass}">${loadLabel}</span>
+      <span class="n">${tasks.length}</span>
+    </div>
+    <div class="jef-person-body collapsed" id="${bodyId}">
+      <div class="table-wrap" style="margin-top:0;border-top:1px solid var(--border);border-radius:0">
+        <div class="table-scroll">
+          <table class="task-table">
+            <thead><tr><th>#</th><th>Tarea</th><th>Área</th><th>Esfuerzo</th><th>Estado</th><th>Fecha</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
 // ── BOOTSTRAP ────────────────────────────────────────────────────────────
 async function bootstrap() {
   updateSprintBadge();
   document.getElementById('refreshBtn').style.display = 'inline-flex';
   document.getElementById('forgetBtn').style.display = 'inline-flex';
   document.getElementById('controls').style.display = 'flex';
+  document.getElementById('tabNav').style.display = 'flex';
   const status = document.getElementById('connStatus');
   status.textContent = 'Cargando personas y espacios…';
   status.className = 'conn-status';
