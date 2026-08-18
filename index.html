@@ -100,6 +100,20 @@
   .export-btn:hover{background:#276749}
   .export-btn:disabled{opacity:.5;cursor:not-allowed}
 
+  .area-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+  .area-DI{background:#fefcbf;color:#744210}
+  .area-Produccion{background:#eef1f5;color:#4a5568}
+  .area-Soporte{background:#f3e8ff;color:#6b21a8}
+  .area-Gestion{background:#ebf8ff;color:#2b6cb0}
+  .area-Proveedor{background:#f0fff4;color:#276749}
+  .area-DI-Senior{background:#fff5f5;color:#c53030}
+  .area-Revisor{background:#fff5f5;color:#742a2a}
+  .area-Docente{background:#ebf4ff;color:#1e3a8a}
+  .area-Calidad{background:#e6fffa;color:#234e52}
+  .area-other{background:#eef1f5;color:#718096}
+  .controls-sep{width:1px;height:28px;background:var(--border);margin:0 4px}
+  .sel-group{display:flex;align-items:center;gap:8px}
+
   @media (max-width:600px){
     .hdr{flex-direction:column;align-items:flex-start}
     .controls{flex-direction:column;align-items:stretch}
@@ -138,10 +152,19 @@
     </header>
 
     <div id="controls" class="controls" style="display:none">
-      <label for="personSel">Persona</label>
-      <select id="personSel" onchange="onPersonChange()">
-        <option value="">Selecciona una persona…</option>
-      </select>
+      <div class="sel-group">
+        <label for="areaSel">Área</label>
+        <select id="areaSel" onchange="onAreaChange()">
+          <option value="">Todas las áreas</option>
+        </select>
+      </div>
+      <div class="controls-sep"></div>
+      <div class="sel-group">
+        <label for="personSel">Persona</label>
+        <select id="personSel" onchange="onPersonChange()">
+          <option value="">Selecciona una persona…</option>
+        </select>
+      </div>
       <button id="exportBtn" class="export-btn" onclick="exportExcel()" style="display:none" disabled>📥 Exportar a Excel</button>
       <span id="connStatus" class="conn-status"></span>
     </div>
@@ -190,17 +213,25 @@ const EXCLUDED_EMAILS = new Set([
 // 'spaceId' se sacó de esta lista: confirmado contra datos reales que viene
 // vacío en la práctica (62/62 tareas revisadas) — la atribución de espacio se
 // resuelve subiendo por parentIds (ver resolveTaskSpaceAndFolder).
-const TASK_FIELDS = ['effortAllocation', 'responsibleIds', 'parentIds', 'superTaskIds'];
+const TASK_FIELDS = ['effortAllocation', 'responsibleIds', 'parentIds', 'superTaskIds', 'customFields'];
+
+// Campo custom "Área" (DropDown) — ID confirmado contra la API real
+const AREA_CF_ID = 'IEAEK4SXJUAE2ECL';
+// Campo custom "Tablero!" (Text) — código de proyecto/curso
+const TABLERO_CF_ID = 'IEAEK4SXJUAEY2ZS';
+// Valores posibles de Área (del campo DropDown en Wrike)
+const AREA_VALUES = ['DI','Producción','Soporte','Gestión','Proveedor','DI Senior','Revisor','Docente','Calidad'];
 
 let spaces = [];         // [{id,title}]
 let spaceIdSet = new Set(); // Set de space ids — para saber cuándo un parentId ES un espacio
 let contacts = [];       // personas activas filtradas
-let folderInfoCache = new Map(); // folderId -> {title, parentIds}|null
+let folderInfoCache = new Map(); // folderId -> {title, parentIds, permalink}|null
 let currentSprint = null;  // sprint REAL de hoy (para badges "Vencida"/"Sprint actual")
 let selectedSprint = null; // sprint que se está navegando/viendo
 let allActiveTasks = [];   // todas las tareas Active únicas (deduplicadas) de la persona seleccionada, con espacio/carpeta resueltos
 let lastFetchStats = null; // {rawCount, uniqueCount, duplicatesRemoved} del último fetch — ver loadPersonTasks
 let isLoading = false;
+let selectedArea = '';     // '' = todas las áreas
 
 // ── WRIKE FETCH ──────────────────────────────────────────────────────────
 async function wrike(path, params = {}) {
@@ -272,6 +303,7 @@ function forgetToken() {
   localStorage.removeItem(TOKEN_KEY);
   token = null;
   spaces = []; spaceIdSet = new Set(); contacts = []; folderInfoCache = new Map(); allActiveTasks = [];
+  selectedArea = '';
   document.getElementById('refreshBtn').style.display = 'none';
   document.getElementById('forgetBtn').style.display = 'none';
   document.getElementById('controls').style.display = 'none';
@@ -425,7 +457,11 @@ async function resolveFoldersInfoBatch(ids) {
     const chunk = toFetch.slice(i, i + 100);
     try {
       const r = await wrike('/folders/' + chunk.join(','));
-      (r.data || []).forEach(f => folderInfoCache.set(f.id, { title: f.title, parentIds: f.parentIds || [] }));
+      (r.data || []).forEach(f => folderInfoCache.set(f.id, {
+        title: f.title,
+        parentIds: f.parentIds || [],
+        permalink: f.permalink || null
+      }));
     } catch (e) { console.warn('resolveFoldersInfoBatch falló para', chunk, e); }
     chunk.forEach(id => { if (!folderInfoCache.has(id)) folderInfoCache.set(id, null); });
   }
@@ -452,19 +488,55 @@ async function resolveSpaceChains(tasks) {
 function resolveTaskSpaceAndFolder(task) {
   const directParent = task.parentIds && task.parentIds[0];
   const info0 = directParent ? folderInfoCache.get(directParent) : null;
-  const folderTitle = info0 ? info0.title : null;
+  // Si el directParent es ya un espacio, no hay carpeta intermedia
+  const folderTitle = (info0 && !spaceIdSet.has(directParent)) ? info0.title : null;
+  const folderPermalink = (info0 && !spaceIdSet.has(directParent)) ? info0.permalink : null;
   let cur = directParent, depth = 0;
   while (cur && depth < 6) {
     if (spaceIdSet.has(cur)) {
       const sp = spaces.find(s => s.id === cur);
-      return { spaceTitle: sp ? sp.title : cur, folderTitle };
+      return { spaceTitle: sp ? sp.title : cur, folderTitle, folderPermalink };
     }
     const info = folderInfoCache.get(cur);
     if (!info || !info.parentIds || !info.parentIds.length) break;
     cur = info.parentIds[0];
     depth++;
   }
-  return { spaceTitle: 'Otro / no identificado', folderTitle };
+  return { spaceTitle: 'Otro / no identificado', folderTitle, folderPermalink: null };
+}
+
+// ── ÁREA (custom field) ────────────────────────────────────────────────────
+function getTaskArea(task) {
+  const cf = (task.customFields || []).find(f => f.id === AREA_CF_ID);
+  return cf ? (cf.value || '') : '';
+}
+function getTaskTablero(task) {
+  const cf = (task.customFields || []).find(f => f.id === TABLERO_CF_ID);
+  return cf ? (cf.value || '') : '';
+}
+function areaCssClass(area) {
+  const map = {
+    'DI':'area-DI','Producción':'area-Produccion','Soporte':'area-Soporte',
+    'Gestión':'area-Gestion','Proveedor':'area-Proveedor','DI Senior':'area-DI-Senior',
+    'Revisor':'area-Revisor','Docente':'area-Docente','Calidad':'area-Calidad'
+  };
+  return map[area] || 'area-other';
+}
+function renderAreaSelect() {
+  const sel = document.getElementById('areaSel');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Todas las áreas</option>' +
+    AREA_VALUES.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
+  if (cur) sel.value = cur;
+}
+function onAreaChange() {
+  selectedArea = document.getElementById('areaSel').value;
+  renderFromCache();
+}
+// Tareas filtradas por área seleccionada (client-side)
+function filteredByArea() {
+  if (!selectedArea) return allActiveTasks;
+  return allActiveTasks.filter(x => getTaskArea(x.task) === selectedArea);
 }
 
 // ── TODAS LAS TAREAS DE LA PERSONA (endpoint global, sin scope) ───────────
@@ -552,8 +624,8 @@ async function loadPersonTasks(contactId) {
     showLoading('Resolviendo espacios y carpetas…');
     await resolveSpaceChains(deduped);
     allActiveTasks = deduped.map(t => {
-      const { spaceTitle, folderTitle } = resolveTaskSpaceAndFolder(t);
-      return { task: t, spaceTitle, folderTitle };
+      const { spaceTitle, folderTitle, folderPermalink } = resolveTaskSpaceAndFolder(t);
+      return { task: t, spaceTitle, folderTitle, folderPermalink };
     });
 
     document.getElementById('exportBtn').style.display = 'inline-flex';
@@ -614,7 +686,8 @@ function renderFromCache() {
       : '';
     return;
   }
-  const { backlog, overdue, sprintTasks } = bucketize(allActiveTasks, selectedSprint);
+  const tasksForArea = filteredByArea();
+  const { backlog, overdue, sprintTasks } = bucketize(tasksForArea, selectedSprint);
   renderSummary(sprintTasks, overdue, backlog);
   renderTaskSections(sprintTasks, overdue, backlog);
 }
@@ -648,13 +721,31 @@ function renderSummary(sprintTasks, overdue, backlog) {
 
 function taskTableRow(x, i, sectionType) {
   const t = x.task;
-  const folderTitle = x.folderTitle || '—';
   const hrs = effortHours(t).toFixed(1) + ' hrs';
   const statusCls = STATUS_CLASS[t.status] || 'badge-deferred';
   const statusLbl = STATUS_LABEL[t.status] || t.status || '—';
   const titleHtml = t.permalink
     ? `<a class="task-link" href="${escapeHtml(t.permalink)}" target="_blank" rel="noopener">${escapeHtml(t.title || '(sin título)')}</a>`
     : `<span class="task-title-plain">${escapeHtml(t.title || '(sin título)')}</span>`;
+
+  // Folder: link clickeable si hay permalink
+  const folderLabel = x.folderTitle || '—';
+  const folderHtml = (x.folderTitle && x.folderPermalink)
+    ? `<a class="task-link" href="${escapeHtml(x.folderPermalink)}" target="_blank" rel="noopener">${escapeHtml(x.folderTitle)}</a>`
+    : (x.folderTitle ? escapeHtml(x.folderTitle) : '<span style="color:var(--muted)">—</span>');
+
+  // Tablero (código de proyecto) — se muestra debajo del folder si existe
+  const tablero = getTaskTablero(t);
+  const folderCell = tablero
+    ? `${folderHtml}<br><small style="color:var(--muted);font-size:10px">${escapeHtml(tablero)}</small>`
+    : folderHtml;
+
+  // Área badge
+  const area = getTaskArea(t);
+  const areaBadge = area
+    ? `<span class="area-badge ${areaCssClass(area)}">${escapeHtml(area)}</span>`
+    : '<span style="color:var(--muted);font-size:11px">—</span>';
+
   let dueCell;
   if (sectionType === 'backlog') {
     dueCell = '<span class="col-due backlog-tag">Backlog</span>';
@@ -667,7 +758,8 @@ function taskTableRow(x, i, sectionType) {
     <td class="col-num">${i + 1}</td>
     <td>${titleHtml}</td>
     <td>${escapeHtml(x.spaceTitle)}</td>
-    <td>${escapeHtml(folderTitle)}</td>
+    <td>${folderCell}</td>
+    <td>${areaBadge}</td>
     <td class="col-effort">${hrs}</td>
     <td><span class="badge ${statusCls}">${escapeHtml(statusLbl)}</span></td>
     <td>${dueCell}</td>
@@ -688,7 +780,7 @@ function taskTableHtml(entries, sectionType) {
         <table class="task-table">
           <thead><tr>
             <th>#</th><th>Tarea</th><th>Espacio</th><th>Carpeta / Proyecto</th>
-            <th>Esfuerzo</th><th>Estado</th><th>Fecha término</th>
+            <th>Área</th><th>Esfuerzo</th><th>Estado</th><th>Fecha término</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -719,24 +811,27 @@ function exportExcel() {
   const personName = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : 'Persona';
   const todayStr = ymd(new Date());
   const weekLabel = 'S' + isoWeekNumber(selectedSprint.start);
-  const { backlog, overdue, sprintTasks } = bucketize(allActiveTasks, selectedSprint);
+  const tasksForArea = filteredByArea();
+  const { backlog, overdue, sprintTasks } = bucketize(tasksForArea, selectedSprint);
 
   const rows = [];
   function pushRows(list, sprintCol) {
     list.forEach(x => {
       const t = x.task;
-      const folderTitle = x.folderTitle || '';
       rows.push({
         'Sprint': sprintCol,
         'Persona': personName,
+        'Área': getTaskArea(t),
         'Nombre de tarea': t.title || '',
         'Espacio': x.spaceTitle,
-        'Carpeta/Proyecto padre': folderTitle,
+        'Carpeta/Proyecto': x.folderTitle || '',
+        'Código de proyecto': getTaskTablero(t),
         'Esfuerzo (hrs)': Number(effortHours(t).toFixed(1)),
         'Estado': STATUS_LABEL[t.status] || t.status || '',
         'Fecha inicio': taskStartYmd(t) || '',
         'Fecha término': taskDueYmd(t) || '',
-        'URL': t.permalink || ''
+        'URL Tarea': t.permalink || '',
+        'URL Carpeta': x.folderPermalink || ''
       });
     });
   }
@@ -767,6 +862,7 @@ async function bootstrap() {
     contacts = contactList;
     spaces = spaceList;
     spaceIdSet = new Set(spaces.map(s => s.id));
+    renderAreaSelect();
     renderPersonSelect();
     status.textContent = `✔ ${contacts.length} personas · ${spaces.length} espacios`;
     status.className = 'conn-status ok';
