@@ -77,11 +77,32 @@
   .btn{width:100%;padding:10px;border-radius:6px;border:1px solid var(--celeste);background:var(--celeste);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer}
   .btn:hover{background:#3182ce}
 
+  .sprint-nav{display:flex;align-items:center;gap:6px}
+  .sprint-nav button{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer}
+  .sprint-nav button:hover{background:rgba(255,255,255,.22)}
+  .sprint-jump{display:flex;align-items:center;gap:4px}
+  .sprint-jump input{width:52px;padding:6px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);color:#fff;font-size:12px;text-align:center}
+  .sprint-jump input::placeholder{color:#bcd7f0}
+  .sprint-jump button{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:6px 9px;font-size:12px;font-weight:600;cursor:pointer}
+
+  .badge-vencida{background:var(--redbg);color:var(--red)}
+  .badge-sprint-actual{background:var(--greenbg);color:var(--green)}
+  .badge-backlog{background:var(--graybg);color:var(--gray)}
+
+  .section-title{font-size:12px;font-weight:800;color:var(--navy);text-transform:uppercase;letter-spacing:.5px;margin:24px 0 8px;display:flex;align-items:center;gap:8px}
+  .section-title .n{background:var(--celestebg);color:var(--blue);border-radius:999px;padding:2px 9px;font-size:11px}
+  .backlog-group .space-hdr{background:var(--gray)}
+
+  .export-btn{background:var(--green);border:1px solid var(--green);color:#fff;border-radius:6px;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .export-btn:hover{background:#276749}
+  .export-btn:disabled{opacity:.5;cursor:not-allowed}
+
   @media (max-width:600px){
     .hdr{flex-direction:column;align-items:flex-start}
     .controls{flex-direction:column;align-items:stretch}
     .conn-status{margin-left:0}
     .controls select{max-width:none}
+    .hdr-actions{width:100%}
   }
 </style>
 </head>
@@ -96,7 +117,15 @@
         </div>
       </div>
       <div class="hdr-actions">
-        <span id="sprintBadge" class="sprint-badge">Sprint: —</span>
+        <div class="sprint-nav">
+          <button onclick="navigateSprint(-1)" title="Sprint anterior">‹ Anterior</button>
+          <span id="sprintBadge" class="sprint-badge">Sprint: —</span>
+          <button onclick="navigateSprint(1)" title="Sprint siguiente">Siguiente ›</button>
+        </div>
+        <div class="sprint-jump">
+          <input type="number" id="sprintJumpInput" min="1" max="53" placeholder="Nº">
+          <button onclick="jumpToSprint()">Ir</button>
+        </div>
         <button id="refreshBtn" class="hbtn" onclick="refreshAll()" style="display:none">🔄 Actualizar</button>
         <button id="forgetBtn" class="hbtn" onclick="forgetToken()" style="display:none">Cerrar sesión</button>
       </div>
@@ -107,6 +136,7 @@
       <select id="personSel" onchange="onPersonChange()">
         <option value="">Selecciona una persona…</option>
       </select>
+      <button id="exportBtn" class="export-btn" onclick="exportExcel()" style="display:none" disabled>📥 Exportar a Excel</button>
       <span id="connStatus" class="conn-status"></span>
     </div>
 
@@ -132,6 +162,7 @@
     </div>
   </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // WeLearn Innovatia — Seguimiento de Sprints
@@ -155,7 +186,9 @@ const TASK_FIELDS = ['effortAllocation', 'responsibleIds', 'parentIds', 'spaceId
 let spaces = [];         // [{id,title}]
 let contacts = [];       // personas activas filtradas
 let folderCache = new Map(); // folderId -> title|null
-let currentSprint = null;
+let currentSprint = null;  // sprint REAL de hoy (para badges "Vencida"/"Sprint actual")
+let selectedSprint = null; // sprint que se está navegando/viendo
+let allActiveTasks = [];   // todas las tareas Active de la persona seleccionada (sin filtro de fecha)
 let isLoading = false;
 
 // ── WRIKE FETCH ──────────────────────────────────────────────────────────
@@ -271,10 +304,64 @@ function computeCurrentSprint(now = new Date()) {
   const end = new Date(start); end.setDate(start.getDate() + 6);
   return { start, end };
 }
+
+// Número de semana ISO-8601 del martes de inicio del sprint (S34 = 18-24 ago 2026, etc.)
+function isoWeekNumber(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+}
+// Inversa de isoWeekNumber: martes de la semana ISO `week` del año `year`.
+function tuesdayOfIsoWeek(week, year) {
+  const jan4 = new Date(year, 0, 4);
+  const jan4Dow = (jan4.getDay() + 6) % 7; // lunes=0..domingo=6
+  const week1Monday = new Date(jan4);
+  week1Monday.setDate(jan4.getDate() - jan4Dow);
+  const monday = new Date(week1Monday);
+  monday.setDate(week1Monday.getDate() + (week - 1) * 7);
+  const tuesday = new Date(monday);
+  tuesday.setDate(monday.getDate() + 1);
+  return tuesday;
+}
+function sprintFromTuesday(tue) {
+  const start = new Date(tue.getFullYear(), tue.getMonth(), tue.getDate());
+  const end = new Date(start); end.setDate(start.getDate() + 6);
+  return { start, end };
+}
+function sprintLabel(sprint) {
+  const w = isoWeekNumber(sprint.start);
+  const dd = d => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+  return 'S' + w + ' — ' + dd(sprint.start) + ' al ' + dd(sprint.end);
+}
+
 function updateSprintBadge() {
   currentSprint = computeCurrentSprint();
-  document.getElementById('sprintBadge').textContent =
-    'Sprint: ' + fmtSprintDate(currentSprint.start) + ' → ' + fmtSprintDate(currentSprint.end) + ' ' + currentSprint.end.getFullYear();
+  if (!selectedSprint) selectedSprint = currentSprint;
+  document.getElementById('sprintBadge').textContent = sprintLabel(selectedSprint);
+}
+
+function navigateSprint(deltaWeeks) {
+  const newStart = new Date(selectedSprint.start);
+  newStart.setDate(newStart.getDate() + deltaWeeks * 7);
+  selectedSprint = sprintFromTuesday(newStart);
+  document.getElementById('sprintBadge').textContent = sprintLabel(selectedSprint);
+  renderFromCache();
+}
+
+function jumpToSprint() {
+  const input = document.getElementById('sprintJumpInput');
+  const w = parseInt(input.value, 10);
+  if (!w || w < 1 || w > 53) return;
+  // Siempre relativo al año REAL vigente (currentSprint), nunca al año del
+  // sprint que se esté navegando — si no, tras un "S1" que cae en el año
+  // anterior, un "S34" posterior heredaría ese año y desalinearía las fechas.
+  const year = currentSprint.start.getFullYear();
+  selectedSprint = sprintFromTuesday(tuesdayOfIsoWeek(w, year));
+  input.value = '';
+  document.getElementById('sprintBadge').textContent = sprintLabel(selectedSprint);
+  renderFromCache();
 }
 
 // ── CONTACTS ─────────────────────────────────────────────────────────────
@@ -321,9 +408,12 @@ async function resolveFoldersBatch(ids) {
 }
 
 // ── TASKS PER SPACE ──────────────────────────────────────────────────────
+// Sin filtro de fecha a nivel API: la mayoría de las tareas activas son tipo
+// "Backlog" (sin start/due) o tienen fechas viejas — filtrar por startDate/
+// dueDate en la request dejaba la búsqueda vacía en la práctica. Ahora se
+// trae TODO lo asignado a la persona (cualquier status) y se filtra/agrupa
+// por sprint del lado del cliente (ver splitBySprintClientSide).
 async function fetchSpaceTasks(spaceId, contactId) {
-  const startStr = ymd(currentSprint.start);
-  const dueStr = ymd(currentSprint.end);
   return paginateAll((nextPageToken) => {
     const params = {
       // Sin descendants+subTasks, /spaces/{id}/tasks solo devuelve tareas
@@ -333,10 +423,6 @@ async function fetchSpaceTasks(spaceId, contactId) {
       descendants: true,
       subTasks: true,
       fields: TASK_FIELDS,
-      // Un rango con start==end (un solo día) devuelve HTTP 400 — para
-      // filtrar por fecha exacta hay que usar {equal:"YYYY-MM-DD"}.
-      startDate: { equal: startStr },
-      dueDate: { equal: dueStr },
       responsibles: [contactId],
       pageSize: 1000
     };
@@ -373,25 +459,31 @@ async function onPersonChange() {
   if (!contactId) {
     document.getElementById('summary').style.display = 'none';
     document.getElementById('content').innerHTML = '';
+    document.getElementById('exportBtn').style.display = 'none';
+    allActiveTasks = [];
     return;
   }
-  await loadSprintTasks(contactId);
+  await loadPersonTasks(contactId);
 }
 
 async function refreshAll() {
   if (isLoading) return;
   updateSprintBadge();
   const sel = document.getElementById('personSel');
-  if (sel.value) await loadSprintTasks(sel.value);
+  if (sel.value) await loadPersonTasks(sel.value);
 }
 
-async function loadSprintTasks(contactId) {
+// Trae TODAS las tareas Active de la persona (sin filtro de fecha) una sola
+// vez; la navegación entre sprints después solo refiltra client-side (ver
+// renderFromCache), sin volver a golpear la API.
+async function loadPersonTasks(contactId) {
   if (isLoading) return;
   isLoading = true;
   document.getElementById('summary').style.display = 'none';
   document.getElementById('content').innerHTML = '';
+  document.getElementById('exportBtn').style.display = 'none';
   let done = 0;
-  showLoading(`Cargando tareas del sprint en ${spaces.length} espacios… (0/${spaces.length})`);
+  showLoading(`Cargando tareas en ${spaces.length} espacios… (0/${spaces.length})`);
   try {
     const perSpace = await mapLimit(spaces, 5, async (space) => {
       let tasks = [];
@@ -401,13 +493,15 @@ async function loadSprintTasks(contactId) {
         console.warn('Error cargando tareas de espacio', space.title, e);
       }
       done++;
-      showLoading(`Cargando tareas del sprint en ${spaces.length} espacios… (${done}/${spaces.length})`);
+      showLoading(`Cargando tareas en ${spaces.length} espacios… (${done}/${spaces.length})`);
       return tasks.map(t => ({ task: t, spaceTitle: space.title, spaceId: space.id }));
     });
-    const allTasks = perSpace.flat();
-    const parentIds = allTasks.map(x => x.task.parentIds && x.task.parentIds[0]).filter(Boolean);
+    const all = perSpace.flat().filter(x => x.task.status === 'Active');
+    const parentIds = all.map(x => x.task.parentIds && x.task.parentIds[0]).filter(Boolean);
     await resolveFoldersBatch(parentIds);
-    renderTasks(allTasks);
+    allActiveTasks = all;
+    document.getElementById('exportBtn').style.display = 'inline-flex';
+    renderFromCache();
   } catch (e) {
     document.getElementById('content').innerHTML = `<div class="state">✖ Error cargando tareas: ${escapeHtml(wrikeErrorMessage(e))}</div>`;
   } finally {
@@ -416,69 +510,123 @@ async function loadSprintTasks(contactId) {
   }
 }
 
-function renderTasks(entries) {
-  const totalTasks = entries.length;
-  const totalHours = entries.reduce((sum, x) => sum + effortHours(x.task), 0);
-  const completedHours = entries.filter(x => x.task.status === 'Completed').reduce((sum, x) => sum + effortHours(x.task), 0);
-  const completedCount = entries.filter(x => x.task.status === 'Completed').length;
+// ── CLASIFICACIÓN POR SPRINT (client-side) ────────────────────────────────
+// Dato real confirmado contra la API: gran parte de las tareas "Active" en
+// esta cuenta tiene fechas Planned viejas (2023-2024) o es tipo Backlog (sin
+// fecha) — casi nada cae en el sprint 2026 vigente. Por eso "Vencidas" es una
+// sección SIEMPRE visible (no depende del sprint que se esté navegando):
+// esconder ese universo detrás de "navega 100 sprints atrás para verlo"
+// haría que la página se viera vacía/rota de nuevo sin serlo.
+function taskDueYmd(t) {
+  const due = t.dates && t.dates.due;
+  return due ? due.slice(0, 10) : null;
+}
+function taskStartYmd(t) {
+  const start = t.dates && t.dates.start;
+  return start ? start.slice(0, 10) : null;
+}
+function isBacklogTask(t) {
+  const d = t.dates || {};
+  return d.type === 'Backlog' || !d.due;
+}
+function inSprintRange(ymdStr, sprint) {
+  if (!ymdStr) return false;
+  return ymdStr >= ymd(sprint.start) && ymdStr <= ymd(sprint.end);
+}
+// Reparte allActiveTasks en 3 baldes mutuamente excluyentes para el sprint
+// que se esté navegando: backlog (sin fecha, siempre) / vencida (due < hoy,
+// siempre) / sprint (due >= hoy y cae en el rango del sprint seleccionado).
+function bucketize(tasks, sprint) {
+  const todayStr = ymd(new Date());
+  const backlog = [], overdue = [], sprintTasks = [];
+  tasks.forEach(x => {
+    if (isBacklogTask(x.task)) { backlog.push(x); return; }
+    const due = taskDueYmd(x.task);
+    if (due < todayStr) { overdue.push(x); return; }
+    if (inSprintRange(due, sprint)) sprintTasks.push(x);
+  });
+  return { backlog, overdue, sprintTasks };
+}
 
+// Re-renderiza desde allActiveTasks (ya en memoria) para el selectedSprint
+// actual — no hace ninguna llamada nueva a Wrike.
+function renderFromCache() {
+  if (!allActiveTasks.length) {
+    document.getElementById('summary').style.display = 'none';
+    document.getElementById('content').innerHTML = document.getElementById('personSel').value
+      ? '<div class="state">Esta persona no tiene tareas activas asignadas en ningún espacio.</div>'
+      : '';
+    return;
+  }
+  const { backlog, overdue, sprintTasks } = bucketize(allActiveTasks, selectedSprint);
+  renderSummary(sprintTasks, overdue, backlog);
+  renderTaskSections(sprintTasks, overdue, backlog);
+}
+
+function renderSummary(sprintTasks, overdue, backlog) {
+  const totalHours = sprintTasks.reduce((sum, x) => sum + effortHours(x.task), 0);
   const summaryEl = document.getElementById('summary');
   summaryEl.style.display = 'grid';
   summaryEl.innerHTML = `
     <div class="kpi accent">
-      <div class="label">Tareas del Sprint</div>
-      <div class="val">${totalTasks}</div>
-      <div class="sub">asignadas a esta persona</div>
+      <div class="label">Tareas en ${escapeHtml('S' + isoWeekNumber(selectedSprint.start))}</div>
+      <div class="val">${sprintTasks.length}</div>
+      <div class="sub">con fecha en este sprint</div>
     </div>
     <div class="kpi accent">
       <div class="label">Horas del Sprint</div>
       <div class="val">${totalHours.toFixed(1)}</div>
       <div class="sub">effortAllocation total</div>
     </div>
+    <div class="kpi" style="${overdue.length ? 'border-left:4px solid var(--red)' : ''}">
+      <div class="label">Vencidas</div>
+      <div class="val" style="${overdue.length ? 'color:var(--red)' : ''}">${overdue.length}</div>
+      <div class="sub">dueDate anterior a hoy</div>
+    </div>
     <div class="kpi accent-green">
-      <div class="label">HH Reales (Completadas)</div>
-      <div class="val">${completedHours.toFixed(1)}</div>
-      <div class="sub">${completedCount} tarea${completedCount === 1 ? '' : 's'} completada${completedCount === 1 ? '' : 's'}</div>
+      <div class="label">Backlog (sin fecha)</div>
+      <div class="val">${backlog.length}</div>
+      <div class="sub">independiente del sprint</div>
     </div>`;
+}
 
-  const content = document.getElementById('content');
-  if (totalTasks === 0) {
-    content.innerHTML = '<div class="state">No hay tareas del sprint actual asignadas a esta persona en ningún espacio.</div>';
-    return;
-  }
+function taskCardHtml(x, sectionType) {
+  const t = x.task;
+  const parentId = t.parentIds && t.parentIds[0];
+  const folderTitle = parentId ? folderCache.get(parentId) : null;
+  const path = x.spaceTitle + (folderTitle ? ' &gt; ' + escapeHtml(folderTitle) : '');
+  const hrs = effortHours(t).toFixed(1);
+  const statusCls = STATUS_CLASS[t.status] || 'badge-deferred';
+  const statusLbl = STATUS_LABEL[t.status] || t.status || '—';
+  const extraBadge = sectionType === 'backlog' ? '<span class="badge badge-backlog">Backlog</span>'
+    : sectionType === 'overdue' ? '<span class="badge badge-vencida">Vencida</span>'
+    : (inSprintRange(taskDueYmd(t), currentSprint) ? '<span class="badge badge-sprint-actual">Sprint actual</span>' : '');
+  const datesLine = sectionType === 'backlog' ? 'Sin fecha' : (fmtTaskDate(taskStartYmd(t)) + ' → ' + fmtTaskDate(taskDueYmd(t)));
+  return `
+    <div class="task-card">
+      <div class="task-title">${escapeHtml(t.title || '(sin título)')}</div>
+      <div class="task-path">${path}</div>
+      <div class="task-row">
+        <span class="badge ${statusCls}">${escapeHtml(statusLbl)}</span>
+        ${extraBadge}
+        <span class="task-effort">${hrs} hrs</span>
+      </div>
+      <div class="task-dates">${datesLine}</div>
+    </div>`;
+}
 
+function groupBySpaceHtml(entries, sectionType) {
   const bySpace = new Map();
   entries.forEach(x => {
     if (!bySpace.has(x.spaceTitle)) bySpace.set(x.spaceTitle, []);
     bySpace.get(x.spaceTitle).push(x);
   });
-
   const spaceNames = [...bySpace.keys()].sort((a, b) => a.localeCompare(b, 'es'));
-  content.innerHTML = spaceNames.map(spaceName => {
+  return spaceNames.map(spaceName => {
     const items = bySpace.get(spaceName);
-    const cards = items.map(x => {
-      const t = x.task;
-      const parentId = t.parentIds && t.parentIds[0];
-      const folderTitle = parentId ? folderCache.get(parentId) : null;
-      const path = spaceName + (folderTitle ? ' &gt; ' + escapeHtml(folderTitle) : '');
-      const hrs = effortHours(t).toFixed(1);
-      const statusCls = STATUS_CLASS[t.status] || 'badge-deferred';
-      const statusLbl = STATUS_LABEL[t.status] || t.status || '—';
-      const start = t.dates && t.dates.start;
-      const due = t.dates && t.dates.due;
-      return `
-        <div class="task-card">
-          <div class="task-title">${escapeHtml(t.title || '(sin título)')}</div>
-          <div class="task-path">${path}</div>
-          <div class="task-row">
-            <span class="badge ${statusCls}">${escapeHtml(statusLbl)}</span>
-            <span class="task-effort">${hrs} hrs</span>
-          </div>
-          <div class="task-dates">${fmtTaskDate(start)} → ${fmtTaskDate(due)}</div>
-        </div>`;
-    }).join('');
+    const cards = items.map(x => taskCardHtml(x, sectionType)).join('');
     return `
-      <div class="space-group">
+      <div class="space-group ${sectionType === 'backlog' ? 'backlog-group' : ''}">
         <div class="space-hdr">
           <span class="name">${escapeHtml(spaceName)}</span>
           <span class="count">${items.length} tarea${items.length === 1 ? '' : 's'}</span>
@@ -486,6 +634,63 @@ function renderTasks(entries) {
         <div class="task-grid">${cards}</div>
       </div>`;
   }).join('');
+}
+
+function renderTaskSections(sprintTasks, overdue, backlog) {
+  const content = document.getElementById('content');
+  let html = '';
+  html += `<div class="section-title">Sprint ${escapeHtml('S' + isoWeekNumber(selectedSprint.start))} <span class="n">${sprintTasks.length}</span></div>`;
+  html += sprintTasks.length ? groupBySpaceHtml(sprintTasks, 'sprint') : '<div class="state">Sin tareas con fecha en este sprint.</div>';
+  html += `<div class="section-title">⚠ Vencidas <span class="n">${overdue.length}</span></div>`;
+  html += overdue.length ? groupBySpaceHtml(overdue, 'overdue') : '<div class="state">Sin tareas vencidas.</div>';
+  html += `<div class="section-title">📋 Sin fecha / Backlog <span class="n">${backlog.length}</span></div>`;
+  html += backlog.length ? groupBySpaceHtml(backlog, 'backlog') : '<div class="state">Sin tareas backlog.</div>';
+  content.innerHTML = html;
+}
+
+// ── EXPORTAR A EXCEL (SheetJS) ─────────────────────────────────────────────
+function exportExcel() {
+  if (typeof XLSX === 'undefined') {
+    alert('No se pudo cargar la librería de Excel (revisa tu conexión a internet).');
+    return;
+  }
+  const sel = document.getElementById('personSel');
+  const personName = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : 'Persona';
+  const todayStr = ymd(new Date());
+  const weekLabel = 'S' + isoWeekNumber(selectedSprint.start);
+  const { backlog, overdue, sprintTasks } = bucketize(allActiveTasks, selectedSprint);
+
+  const rows = [];
+  function pushRows(list, sprintCol) {
+    list.forEach(x => {
+      const t = x.task;
+      const parentId = t.parentIds && t.parentIds[0];
+      const folderTitle = parentId ? (folderCache.get(parentId) || '') : '';
+      rows.push({
+        'Sprint': sprintCol,
+        'Persona': personName,
+        'Nombre de tarea': t.title || '',
+        'Espacio': x.spaceTitle,
+        'Carpeta/Proyecto padre': folderTitle,
+        'Esfuerzo (hrs)': Number(effortHours(t).toFixed(1)),
+        'Estado': STATUS_LABEL[t.status] || t.status || '',
+        'Fecha inicio': taskStartYmd(t) || '',
+        'Fecha término': taskDueYmd(t) || '',
+        'URL': t.permalink || ''
+      });
+    });
+  }
+  pushRows(sprintTasks, weekLabel);
+  pushRows(overdue, weekLabel + ' (vencida)');
+  pushRows(backlog, 'Backlog');
+
+  if (!rows.length) { alert('No hay tareas visibles para exportar.'); return; }
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sprint');
+  const safeName = personName.replace(/\s+/g, '_').replace(/[\\/:*?"<>|]/g, '');
+  XLSX.writeFile(wb, `Sprint_${weekLabel}_${safeName}_${todayStr}.xlsx`);
 }
 
 // ── BOOTSTRAP ────────────────────────────────────────────────────────────
