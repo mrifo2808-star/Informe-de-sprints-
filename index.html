@@ -77,7 +77,7 @@
   .token-note{font-size:11.5px;color:var(--muted);line-height:1.6;margin:0 0 12px;background:#f8fafc;padding:10px 12px;border-radius:6px;border-left:3px solid var(--celeste)}
   .token-input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:13.5px;margin-bottom:10px}
   .modal-status{min-height:18px;font-size:12px;margin-bottom:10px}
-  .modal-status.err{color:var(--red)}
+  .modal-status.err{color:var(--red);font-weight:600}
   .modal-status.ok{color:var(--green)}
   .btn{width:100%;padding:10px;border-radius:6px;border:1px solid var(--celeste);background:var(--celeste);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer}
   .btn:hover{background:#3182ce}
@@ -99,20 +99,6 @@
   .export-btn{background:var(--green);border:1px solid var(--green);color:#fff;border-radius:6px;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
   .export-btn:hover{background:#276749}
   .export-btn:disabled{opacity:.5;cursor:not-allowed}
-
-  .area-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
-  .area-DI{background:#fefcbf;color:#744210}
-  .area-Produccion{background:#eef1f5;color:#4a5568}
-  .area-Soporte{background:#f3e8ff;color:#6b21a8}
-  .area-Gestion{background:#ebf8ff;color:#2b6cb0}
-  .area-Proveedor{background:#f0fff4;color:#276749}
-  .area-DI-Senior{background:#fff5f5;color:#c53030}
-  .area-Revisor{background:#fff5f5;color:#742a2a}
-  .area-Docente{background:#ebf4ff;color:#1e3a8a}
-  .area-Calidad{background:#e6fffa;color:#234e52}
-  .area-other{background:#eef1f5;color:#718096}
-  .controls-sep{width:1px;height:28px;background:var(--border);margin:0 4px}
-  .sel-group{display:flex;align-items:center;gap:8px}
 
   .section-title{cursor:pointer;user-select:none}
   .section-title:hover{color:var(--blue)}
@@ -165,13 +151,6 @@
 
     <div id="controls" class="controls" style="display:none">
       <div class="sel-group">
-        <label for="areaSel">Área</label>
-        <select id="areaSel" onchange="onAreaChange()">
-          <option value="">Todas las áreas</option>
-        </select>
-      </div>
-      <div class="controls-sep"></div>
-      <div class="sel-group">
         <label for="personSel">Persona</label>
         <select id="personSel" onchange="onPersonChange()">
           <option value="">Selecciona una persona…</option>
@@ -189,6 +168,18 @@
     </div>
 
     <div id="content"></div>
+  </div>
+
+  <div class="modal-bg" id="pinGate">
+    <div class="modal">
+      <div class="modal-hdr">🔐 Acceso WeLearn Innovatia</div>
+      <div class="modal-body">
+        <p class="token-note">Ingresa el código de acceso de la empresa para ver el tablero de sprints.</p>
+        <input type="password" id="pinInput" class="token-input" placeholder="Código de acceso…" autocomplete="off" spellcheck="false">
+        <div id="pinStatus" class="modal-status"></div>
+        <button class="btn" onclick="checkPin()">Ingresar</button>
+      </div>
+    </div>
   </div>
 
   <div class="modal-bg" id="authGate">
@@ -213,6 +204,10 @@
 
 const TOKEN_KEY = 'wrike_token';
 let token = localStorage.getItem(TOKEN_KEY) || null;
+
+const ACCESS_KEY = 'wl_access_v1';
+// SHA-256 hex de "WeLearn2026" — cambiar este hash para rotar el PIN
+const ACCESS_PIN_HASH = '15b8a36de1c214ba13f8d80f365f7d0f2a201ee377f95d0c830ab9251b618acb';
 
 const EXCLUDED_EMAILS = new Set([
   'colaborador@welearn.cl',
@@ -243,8 +238,6 @@ let selectedSprint = null; // sprint que se está navegando/viendo
 let allActiveTasks = [];   // todas las tareas únicas (deduplicadas) de la persona seleccionada, con espacio/carpeta resueltos
 let lastFetchStats = null; // {rawCount, uniqueCount} del último fetch
 let isLoading = false;
-let selectedArea = '';     // '' = todas las áreas
-let areaContactIds = null; // null = sin filtro, Set<id> = personas del área seleccionada
 
 // Secciones por status (Canceladas ocultas — no se muestran en el tablero)
 const STATUS_SECTIONS = [
@@ -282,6 +275,37 @@ function escapeHtml(s) {
   if (s == null) return '';
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 }
+
+// ── PIN GATE (acceso de empresa) ────────────────────────────────────────
+async function sha256hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+function showPinGate() {
+  document.getElementById('pinGate').classList.add('show');
+}
+function hidePinGate() {
+  document.getElementById('pinGate').classList.remove('show');
+}
+
+async function checkPin() {
+  const val = document.getElementById('pinInput').value.trim();
+  const status = document.getElementById('pinStatus');
+  if (!val) { status.textContent = 'Ingresa el código.'; status.className = 'modal-status err'; return; }
+  status.textContent = 'Verificando…'; status.className = 'modal-status';
+  const hash = await sha256hex(val);
+  if (hash === ACCESS_PIN_HASH) {
+    localStorage.setItem(ACCESS_KEY, '1');
+    hidePinGate();
+    if (!token) showGate(); else await bootstrap();
+  } else {
+    status.textContent = 'Código incorrecto.'; status.className = 'modal-status err';
+    document.getElementById('pinInput').value = '';
+  }
+}
+
+document.getElementById('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPin(); });
 
 // ── AUTH GATE ────────────────────────────────────────────────────────────
 function showGate() { document.getElementById('authGate').classList.add('show'); }
@@ -321,16 +345,16 @@ async function connect() {
 
 function forgetToken() {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(ACCESS_KEY);
   token = null;
   spaces = []; spaceIdSet = new Set(); contacts = []; folderInfoCache = new Map(); allActiveTasks = [];
-  selectedArea = ''; areaContactIds = null;
   document.getElementById('refreshBtn').style.display = 'none';
   document.getElementById('forgetBtn').style.display = 'none';
   document.getElementById('controls').style.display = 'none';
   document.getElementById('summary').style.display = 'none';
   document.getElementById('content').innerHTML = '';
   document.getElementById('connStatus').textContent = '';
-  showGate();
+  showPinGate();
 }
 
 // ── SPRINT (martes → lunes) ─────────────────────────────────────────────
@@ -455,13 +479,9 @@ async function loadContacts() {
 function renderPersonSelect() {
   const sel = document.getElementById('personSel');
   const cur = sel.value;
-  const visible = areaContactIds
-    ? contacts.filter(c => areaContactIds.has(c.id))
-    : contacts;
-  const countNote = areaContactIds ? ` (${visible.length} en esta área)` : '';
-  sel.innerHTML = `<option value="">Selecciona una persona…${countNote}</option>` +
-    visible.map(c => `<option value="${c.id}">${escapeHtml(fullName(c))}</option>`).join('');
-  if (cur && visible.find(c => c.id === cur)) sel.value = cur;
+  sel.innerHTML = '<option value="">Selecciona una persona…</option>' +
+    contacts.map(c => `<option value="${c.id}">${escapeHtml(fullName(c))}</option>`).join('');
+  if (cur && contacts.find(c => c.id === cur)) sel.value = cur;
 }
 
 // ── SPACES ───────────────────────────────────────────────────────────────
@@ -546,74 +566,6 @@ function areaCssClass(area) {
   };
   return map[area] || 'area-other';
 }
-function renderAreaSelect() {
-  const sel = document.getElementById('areaSel');
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">Todas las áreas</option>' +
-    AREA_VALUES.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
-  if (cur) sel.value = cur;
-}
-
-// Busca tareas con el área dada — solo necesitamos los responsibleIds
-async function fetchTasksForArea(areaValue) {
-  return paginateAll((nextPageToken) => {
-    const params = {
-      fields: ['responsibleIds'],
-      customFields: [{ id: AREA_CF_ID, comparator: 'EqualTo', value: areaValue }],
-      pageSize: 1000
-    };
-    if (nextPageToken) params.nextPageToken = nextPageToken;
-    return wrike('/tasks', params);
-  });
-}
-
-async function onAreaChange() {
-  selectedArea = document.getElementById('areaSel').value;
-  if (selectedArea) {
-    const areaSel = document.getElementById('areaSel');
-    areaSel.disabled = true;
-    const status = document.getElementById('connStatus');
-    const prevStatus = status.textContent;
-    status.textContent = `Buscando personas del área "${selectedArea}"…`;
-    status.className = 'conn-status';
-    try {
-      const tasks = await fetchTasksForArea(selectedArea);
-      const ids = new Set(tasks.flatMap(t => t.responsibleIds || []));
-      areaContactIds = ids;
-    } catch (e) {
-      console.warn('No se pudo filtrar por área:', e);
-      areaContactIds = null;
-    } finally {
-      areaSel.disabled = false;
-      document.getElementById('connStatus').textContent = prevStatus;
-      document.getElementById('connStatus').className = 'conn-status ok';
-    }
-  } else {
-    areaContactIds = null;
-  }
-  renderPersonSelect(); // refresca la lista de personas
-  // Si ya había una persona seleccionada y ya no está en el área, re-render vacío
-  const personSel = document.getElementById('personSel');
-  if (personSel.value) {
-    if (areaContactIds && !areaContactIds.has(personSel.value)) {
-      personSel.value = '';
-      allActiveTasks = [];
-      document.getElementById('summary').style.display = 'none';
-      document.getElementById('content').innerHTML = '';
-      const eb2 = document.getElementById('exportBtn');
-      eb2.style.display = 'none'; eb2.disabled = true;
-    } else {
-      renderFromCache();
-    }
-  }
-}
-
-// Tareas filtradas por área seleccionada (client-side)
-function filteredByArea() {
-  if (!selectedArea) return allActiveTasks;
-  return allActiveTasks.filter(x => getTaskArea(x.task) === selectedArea);
-}
-
 // ── TODAS LAS TAREAS DE LA PERSONA (endpoint global, sin scope) ───────────
 // Iterar espacio por espacio (/spaces/{id}/tasks) se probó y se descartó:
 // verificado contra datos reales que pierde tareas activas genuinas cuando
@@ -793,7 +745,7 @@ function renderFromCache() {
       : '';
     return;
   }
-  const tasksForArea = filteredByArea();
+  const tasksForArea = allActiveTasks;
   const sprintStart = ymd(selectedSprint.start);
   const sprintEnd   = ymd(selectedSprint.end);
 
@@ -1050,7 +1002,7 @@ function exportExcel() {
   const personName = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : 'Persona';
   const todayStr = ymd(new Date());
   const weekLabel = 'S' + isoWeekNumber(selectedSprint.start);
-  const tasksForArea = filteredByArea();
+  const tasksForArea = allActiveTasks;
   const byStatus = {};
   STATUS_SECTIONS.forEach(s => { byStatus[s.key] = []; });
   tasksForArea.forEach(x => {
@@ -1105,7 +1057,6 @@ async function bootstrap() {
     contacts = contactList;
     spaces = spaceList;
     spaceIdSet = new Set(spaces.map(s => s.id));
-    renderAreaSelect();
     renderPersonSelect();
     status.textContent = `✔ ${contacts.length} personas · ${spaces.length} espacios`;
     status.className = 'conn-status ok';
@@ -1123,6 +1074,11 @@ async function bootstrap() {
 
 function init() {
   updateSprintBadge();
+  const pinOk = localStorage.getItem(ACCESS_KEY) === '1';
+  if (!pinOk) {
+    showPinGate();
+    return;
+  }
   if (!token) {
     showGate();
     return;
