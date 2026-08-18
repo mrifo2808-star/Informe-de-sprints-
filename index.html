@@ -197,8 +197,10 @@
           <input type="number" id="sprintJumpInput" min="1" max="53" placeholder="Nº">
           <button onclick="jumpToSprint()">Ir</button>
         </div>
+        <span id="userBadge" class="sprint-badge" style="display:none"></span>
+        <button id="usersBtn" class="hbtn" onclick="openUsersModal()" style="display:none">⚙ Usuarios</button>
         <button id="refreshBtn" class="hbtn" onclick="refreshAll()" style="display:none">🔄 Actualizar</button>
-        <button id="forgetBtn" class="hbtn" onclick="forgetToken()" style="display:none">Cerrar sesión</button>
+        <button id="forgetBtn" class="hbtn" onclick="logout()" style="display:none">Cerrar sesión</button>
       </div>
     </header>
 
@@ -229,7 +231,7 @@
 
     <div id="jef-view" style="display:none">
       <div id="jef-controls" class="controls">
-        <div class="sel-group">
+        <div class="sel-group" id="jefAreaGroup">
           <label for="jefAreaSel">Área</label>
           <select id="jefAreaSel">
             <option value="DI">DI</option>
@@ -279,14 +281,15 @@
     </div>
   </div>
 
-  <div class="modal-bg" id="pinGate">
+  <div class="modal-bg" id="loginGate">
     <div class="modal">
-      <div class="modal-hdr">🔐 Acceso WeLearn Innovatia</div>
+      <div class="modal-hdr">🔐 WeLearn Innovatia — Iniciar sesión</div>
       <div class="modal-body">
-        <p class="token-note">Ingresa el código de acceso de la empresa para ver el tablero de sprints.</p>
-        <input type="password" id="pinInput" class="token-input" placeholder="Código de acceso…" autocomplete="off" spellcheck="false">
-        <div id="pinStatus" class="modal-status"></div>
-        <button class="btn" onclick="checkPin()">Ingresar</button>
+        <p class="token-note">Ingresa tu usuario y contraseña para acceder al tablero de sprints.</p>
+        <input type="text" id="loginUser" class="token-input" placeholder="Usuario" autocomplete="off" spellcheck="false">
+        <input type="password" id="loginPass" class="token-input" placeholder="Contraseña" autocomplete="off" spellcheck="false">
+        <div id="loginStatus" class="modal-status"></div>
+        <button class="btn" onclick="login()">Iniciar sesión</button>
       </div>
     </div>
   </div>
@@ -303,6 +306,39 @@
     </div>
   </div>
 
+  <div class="modal-bg" id="usersModal">
+    <div class="modal" style="max-width:640px">
+      <div class="modal-hdr">⚙ Gestión de usuarios</div>
+      <div class="modal-body">
+        <div id="usersTableWrap" style="max-height:320px;overflow:auto;margin-bottom:12px"></div>
+        <div id="userFormWrap" style="display:none;border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+          <input type="text" id="newUserNombre" class="token-input" placeholder="Nombre completo">
+          <input type="text" id="newUserUsername" class="token-input" placeholder="Usuario (ej: jef.di)">
+          <input type="text" id="newUserPass" class="token-input" placeholder="Contraseña temporal">
+          <select id="newUserRole" class="token-input" onchange="onNewUserRoleChange()">
+            <option value="staff">Staff</option>
+            <option value="jefatura">Jefatura</option>
+            <option value="admin">Admin</option>
+          </select>
+          <select id="newUserArea" class="token-input" style="display:none">
+            <option value="DI">DI</option>
+            <option value="Producción">Producción</option>
+            <option value="Soporte">Soporte</option>
+          </select>
+          <div id="userFormStatus" class="modal-status"></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn" style="background:var(--gray);border-color:var(--gray)" onclick="hideAddUserForm()">Cancelar</button>
+            <button class="btn" onclick="saveNewUser()">Guardar</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn" id="addUserBtn" onclick="showAddUserForm()">＋ Nuevo usuario</button>
+          <button class="btn" style="background:var(--gray);border-color:var(--gray)" onclick="closeUsersModal()">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -314,9 +350,10 @@
 const TOKEN_KEY = 'wrike_token';
 let token = localStorage.getItem(TOKEN_KEY) || null;
 
-const ACCESS_KEY = 'wl_access_v1';
-// SHA-256 hex de "WeLearn2026" — cambiar este hash para rotar el PIN
-const ACCESS_PIN_HASH = '15b8a36de1c214ba13f8d80f365f7d0f2a201ee377f95d0c830ab9251b618acb';
+const USERS_KEY = 'wl_users_v1';
+const SESSION_KEY = 'wl_session_v1';
+const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 horas
+let session = null;
 
 const EXCLUDED_EMAILS = new Set([
   'colaborador@welearn.cl',
@@ -385,36 +422,213 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 }
 
-// ── PIN GATE (acceso de empresa) ────────────────────────────────────────
+// ── USUARIOS Y SESIÓN (login local, sin backend) ──────────────────────────
 async function sha256hex(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-function showPinGate() {
-  document.getElementById('pinGate').classList.add('show');
+function getUsers() {
+  try { return JSON.parse(localStorage.getItem(USERS_KEY)) || []; }
+  catch (e) { return []; }
 }
-function hidePinGate() {
-  document.getElementById('pinGate').classList.remove('show');
+function saveUsers(users) { localStorage.setItem(USERS_KEY, JSON.stringify(users)); }
+
+// Crea los usuarios por defecto la primera vez que se abre el tablero en un
+// dispositivo. No pisa usuarios ya creados/editados por el Admin.
+async function seedUsersIfNeeded() {
+  if (localStorage.getItem(USERS_KEY)) return;
+  const defaults = [
+    { username: 'admin',    password: 'WeLearn2026Admin', role: 'admin',    area: null,         nombre: 'Matías' },
+    { username: 'jef.di',   password: 'JefDI2026',        role: 'jefatura', area: 'DI',         nombre: 'Jefatura DI' },
+    { username: 'jef.prod', password: 'JefProd2026',      role: 'jefatura', area: 'Producción', nombre: 'Jefatura Producción' },
+    { username: 'jef.sop',  password: 'JefSop2026',       role: 'jefatura', area: 'Soporte',    nombre: 'Jefatura Soporte' },
+    { username: 'staff',    password: 'Staff2026',        role: 'staff',    area: null,         nombre: 'Staff' }
+  ];
+  const users = [];
+  for (let i = 0; i < defaults.length; i++) {
+    const d = defaults[i];
+    users.push({ id: 'u' + (i + 1), username: d.username, passwordHash: await sha256hex(d.password), role: d.role, area: d.area, nombre: d.nombre, seeded: true });
+  }
+  saveUsers(users);
 }
 
-async function checkPin() {
-  const val = document.getElementById('pinInput').value.trim();
-  const status = document.getElementById('pinStatus');
-  if (!val) { status.textContent = 'Ingresa el código.'; status.className = 'modal-status err'; return; }
-  status.textContent = 'Verificando…'; status.className = 'modal-status';
-  const hash = await sha256hex(val);
-  if (hash === ACCESS_PIN_HASH) {
-    localStorage.setItem(ACCESS_KEY, '1');
-    hidePinGate();
-    if (!token) showGate(); else await bootstrap();
+function loadSession() {
+  const raw = localStorage.getItem(SESSION_KEY);
+  if (!raw) return null;
+  try {
+    const s = JSON.parse(raw);
+    if (!s.loginAt || Date.now() - s.loginAt > SESSION_DURATION_MS) { localStorage.removeItem(SESSION_KEY); return null; }
+    return s;
+  } catch (e) { return null; }
+}
+function saveSession(s) { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
+function clearSession() { localStorage.removeItem(SESSION_KEY); }
+
+const ROLE_LABEL = { admin: 'Admin', jefatura: 'Jefatura', staff: 'Staff' };
+
+function showSessionHeader() {
+  document.getElementById('forgetBtn').style.display = 'inline-flex';
+  const badge = document.getElementById('userBadge');
+  badge.style.display = 'inline-flex';
+  const roleTxt = session.role === 'jefatura' ? `Jefatura · ${session.area}` : (ROLE_LABEL[session.role] || session.role);
+  badge.textContent = '👤 ' + session.nombre + ' · ' + roleTxt;
+  document.getElementById('usersBtn').style.display = session.role === 'admin' ? 'inline-flex' : 'none';
+}
+
+// Ajusta tabs, vista de Jefaturas y área fija según el rol de la sesión activa.
+function applyRoleUI() {
+  const tabNav = document.getElementById('tabNav');
+  if (session.role === 'admin') {
+    tabNav.style.display = 'flex';
+    document.getElementById('jefAreaGroup').style.display = '';
+    switchTab('individual');
+  } else if (session.role === 'jefatura') {
+    tabNav.style.display = 'none';
+    jefSelectedArea = session.area;
+    const areaSel = document.getElementById('jefAreaSel');
+    if (areaSel) areaSel.value = session.area;
+    document.getElementById('jefAreaGroup').style.display = 'none';
+    switchTab('jefaturas');
   } else {
-    status.textContent = 'Código incorrecto.'; status.className = 'modal-status err';
-    document.getElementById('pinInput').value = '';
+    tabNav.style.display = 'none';
+    switchTab('individual');
   }
 }
 
-document.getElementById('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPin(); });
+function showLoginGate() { document.getElementById('loginGate').classList.add('show'); }
+function hideLoginGate() { document.getElementById('loginGate').classList.remove('show'); }
+
+async function login() {
+  const username = document.getElementById('loginUser').value.trim();
+  const password = document.getElementById('loginPass').value;
+  const status = document.getElementById('loginStatus');
+  if (!username || !password) { status.textContent = 'Ingresa usuario y contraseña.'; status.className = 'modal-status err'; return; }
+  status.textContent = 'Verificando…'; status.className = 'modal-status';
+  const users = getUsers();
+  const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+  const hash = await sha256hex(password);
+  if (!user || user.passwordHash !== hash) {
+    status.textContent = 'Usuario o contraseña incorrectos.'; status.className = 'modal-status err';
+    document.getElementById('loginPass').value = '';
+    return;
+  }
+  session = { userId: user.id, username: user.username, role: user.role, area: user.area || null, nombre: user.nombre, loginAt: Date.now() };
+  saveSession(session);
+  document.getElementById('loginUser').value = ''; document.getElementById('loginPass').value = ''; status.textContent = '';
+  hideLoginGate();
+  showSessionHeader();
+  if (user.seeded && user.username === 'admin') {
+    setTimeout(() => alert('⚠ Estás usando la contraseña temporal de fábrica del Admin.\nCámbiala desde ⚙ Usuarios → 🔑 lo antes posible.'), 300);
+  }
+  if (!token) showGate(); else await bootstrap();
+}
+
+function logout() {
+  clearSession();
+  session = null;
+  document.getElementById('refreshBtn').style.display = 'none';
+  document.getElementById('forgetBtn').style.display = 'none';
+  document.getElementById('usersBtn').style.display = 'none';
+  document.getElementById('userBadge').style.display = 'none';
+  document.getElementById('tabNav').style.display = 'none';
+  document.getElementById('controls').style.display = 'none';
+  document.getElementById('summary').style.display = 'none';
+  document.getElementById('content').innerHTML = '';
+  document.getElementById('jef-view').style.display = 'none';
+  document.getElementById('connStatus').textContent = '';
+  showLoginGate();
+}
+
+document.getElementById('loginUser').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('loginPass').focus(); });
+document.getElementById('loginPass').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+// ── PANEL DE USUARIOS (solo Admin) ─────────────────────────────────────────
+function openUsersModal() {
+  renderUsersTable();
+  hideAddUserForm();
+  document.getElementById('usersModal').classList.add('show');
+}
+function closeUsersModal() { document.getElementById('usersModal').classList.remove('show'); }
+
+function renderUsersTable() {
+  const users = getUsers();
+  const rows = users.map(u => `<tr>
+    <td>${escapeHtml(u.nombre)}</td>
+    <td>${escapeHtml(u.username)}</td>
+    <td>${ROLE_LABEL[u.role] || u.role}</td>
+    <td>${u.area ? escapeHtml(u.area) : '—'}</td>
+    <td style="white-space:nowrap">
+      <button class="hbtn" style="color:var(--navy);border-color:var(--border);background:#fff" onclick="resetUserPassword('${u.id}')" title="Resetear contraseña">🔑</button>
+      <button class="hbtn" style="color:var(--red);border-color:var(--border);background:#fff" onclick="deleteUser('${u.id}')" title="Eliminar">🗑</button>
+    </td>
+  </tr>`).join('');
+  document.getElementById('usersTableWrap').innerHTML = `<table class="task-table"><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Área</th><th>Acciones</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function showAddUserForm() {
+  document.getElementById('userFormWrap').style.display = 'block';
+  document.getElementById('newUserNombre').value = '';
+  document.getElementById('newUserUsername').value = '';
+  document.getElementById('newUserPass').value = '';
+  document.getElementById('newUserRole').value = 'staff';
+  document.getElementById('newUserArea').style.display = 'none';
+  document.getElementById('userFormStatus').textContent = '';
+}
+function hideAddUserForm() { document.getElementById('userFormWrap').style.display = 'none'; }
+
+function onNewUserRoleChange() {
+  document.getElementById('newUserArea').style.display = document.getElementById('newUserRole').value === 'jefatura' ? 'block' : 'none';
+}
+
+function genTempPassword() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let s = '';
+  for (let i = 0; i < 10; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+async function saveNewUser() {
+  const nombre = document.getElementById('newUserNombre').value.trim();
+  const username = document.getElementById('newUserUsername').value.trim();
+  const pass = document.getElementById('newUserPass').value;
+  const role = document.getElementById('newUserRole').value;
+  const area = role === 'jefatura' ? document.getElementById('newUserArea').value : null;
+  const status = document.getElementById('userFormStatus');
+  if (!nombre || !username || !pass) { status.textContent = 'Completa todos los campos.'; status.className = 'modal-status err'; return; }
+  const users = getUsers();
+  if (users.find(u => u.username.toLowerCase() === username.toLowerCase())) {
+    status.textContent = 'Ese usuario ya existe.'; status.className = 'modal-status err'; return;
+  }
+  const passwordHash = await sha256hex(pass);
+  users.push({ id: 'u' + Date.now(), username, passwordHash, role, area, nombre, seeded: false });
+  saveUsers(users);
+  hideAddUserForm();
+  renderUsersTable();
+}
+
+function deleteUser(id) {
+  const users = getUsers();
+  const u = users.find(x => x.id === id);
+  if (!u) return;
+  if (session && u.id === session.userId) { alert('No puedes eliminar tu propia cuenta mientras estás conectado.'); return; }
+  if (u.role === 'admin' && users.filter(x => x.role === 'admin').length <= 1) { alert('Debe existir al menos un administrador.'); return; }
+  if (!confirm(`¿Eliminar al usuario "${u.nombre}" (${u.username})?`)) return;
+  saveUsers(users.filter(x => x.id !== id));
+  renderUsersTable();
+}
+
+async function resetUserPassword(id) {
+  const users = getUsers();
+  const u = users.find(x => x.id === id);
+  if (!u) return;
+  const temp = genTempPassword();
+  u.passwordHash = await sha256hex(temp);
+  u.seeded = true;
+  saveUsers(users);
+  renderUsersTable();
+  alert(`Nueva contraseña temporal para ${u.username}:\n\n${temp}\n\nCompártela de forma segura — no se volverá a mostrar.`);
+}
 
 // ── AUTH GATE ────────────────────────────────────────────────────────────
 function showGate() { document.getElementById('authGate').classList.add('show'); }
@@ -454,16 +668,15 @@ async function connect() {
 
 function forgetToken() {
   localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(ACCESS_KEY);
   token = null;
   spaces = []; spaceIdSet = new Set(); contacts = []; folderInfoCache = new Map(); allActiveTasks = [];
   document.getElementById('refreshBtn').style.display = 'none';
-  document.getElementById('forgetBtn').style.display = 'none';
   document.getElementById('controls').style.display = 'none';
+  document.getElementById('tabNav').style.display = 'none';
   document.getElementById('summary').style.display = 'none';
   document.getElementById('content').innerHTML = '';
   document.getElementById('connStatus').textContent = '';
-  showPinGate();
+  showGate();
 }
 
 // ── SPRINT (martes → lunes) ─────────────────────────────────────────────
@@ -1566,7 +1779,6 @@ function renderPersonJefCard(contact, tasks, activeHours, completedHours, staffI
 async function bootstrap() {
   updateSprintBadge();
   document.getElementById('refreshBtn').style.display = 'inline-flex';
-  document.getElementById('forgetBtn').style.display = 'inline-flex';
   document.getElementById('controls').style.display = 'flex';
   document.getElementById('tabNav').style.display = 'flex';
   const status = document.getElementById('connStatus');
@@ -1580,11 +1792,11 @@ async function bootstrap() {
     renderPersonSelect();
     status.textContent = `✔ ${contacts.length} personas · ${spaces.length} espacios`;
     status.className = 'conn-status ok';
+    applyRoleUI();
   } catch (e) {
     if (e.message.includes('401')) {
       forgetToken();
       setGateStatus('✖ Token inválido o expirado. Vuelve a conectar.', 'err');
-      showGate();
       return;
     }
     status.textContent = '✖ ' + wrikeErrorMessage(e);
@@ -1592,18 +1804,20 @@ async function bootstrap() {
   }
 }
 
-function init() {
+async function init() {
   updateSprintBadge();
-  const pinOk = localStorage.getItem(ACCESS_KEY) === '1';
-  if (!pinOk) {
-    showPinGate();
+  await seedUsersIfNeeded();
+  session = loadSession();
+  if (!session) {
+    showLoginGate();
     return;
   }
+  showSessionHeader();
   if (!token) {
     showGate();
     return;
   }
-  bootstrap();
+  await bootstrap();
 }
 
 init();
