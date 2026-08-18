@@ -114,6 +114,18 @@
   .controls-sep{width:1px;height:28px;background:var(--border);margin:0 4px}
   .sel-group{display:flex;align-items:center;gap:8px}
 
+  .section-title{cursor:pointer;user-select:none}
+  .section-title:hover{color:var(--blue)}
+  .section-toggle-icon{font-size:10px;transition:transform .15s;display:inline-block;color:var(--muted);flex-shrink:0}
+  .section-toggle-icon.open{transform:rotate(90deg)}
+  .section-body.collapsed{display:none}
+
+  .sprint-subgroup{margin:4px 0 10px}
+  .sprint-subgroup-hdr{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;padding:7px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:4px;font-size:12px;font-weight:700;color:var(--navy)}
+  .sprint-subgroup-hdr:hover{background:var(--celestebg);border-color:var(--celeste)}
+  .sprint-subgroup-hdr .n{background:var(--celestebg);color:var(--blue);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700}
+  .sprint-subgroup-body.collapsed{display:none}
+
   @media (max-width:600px){
     .hdr{flex-direction:column;align-items:flex-start}
     .controls{flex-direction:column;align-items:stretch}
@@ -589,7 +601,8 @@ async function onAreaChange() {
       allActiveTasks = [];
       document.getElementById('summary').style.display = 'none';
       document.getElementById('content').innerHTML = '';
-      document.getElementById('exportBtn').style.display = 'none';
+      const eb2 = document.getElementById('exportBtn');
+      eb2.style.display = 'none'; eb2.disabled = true;
     } else {
       renderFromCache();
     }
@@ -675,7 +688,8 @@ async function onPersonChange() {
   if (!contactId) {
     document.getElementById('summary').style.display = 'none';
     document.getElementById('content').innerHTML = '';
-    document.getElementById('exportBtn').style.display = 'none';
+    const eb = document.getElementById('exportBtn');
+    eb.style.display = 'none'; eb.disabled = true;
     allActiveTasks = [];
     return;
   }
@@ -697,7 +711,8 @@ async function loadPersonTasks(contactId) {
   isLoading = true;
   document.getElementById('summary').style.display = 'none';
   document.getElementById('content').innerHTML = '';
-  document.getElementById('exportBtn').style.display = 'none';
+  const ebHide = document.getElementById('exportBtn');
+  ebHide.style.display = 'none'; ebHide.disabled = true;
   showLoading('Cargando tareas…');
   try {
     // Fetch activas + completadas recientes en paralelo
@@ -719,7 +734,8 @@ async function loadPersonTasks(contactId) {
       return { task: t, spaceTitle, folderTitle, folderPermalink };
     });
 
-    document.getElementById('exportBtn').style.display = 'inline-flex';
+    const ebShow = document.getElementById('exportBtn');
+    ebShow.style.display = 'inline-flex'; ebShow.disabled = false;
     renderFromCache();
   } catch (e) {
     document.getElementById('content').innerHTML = `<div class="state">✖ Error cargando tareas: ${escapeHtml(wrikeErrorMessage(e))}</div>`;
@@ -916,17 +932,98 @@ function taskTableHtml(entries, statusKey) {
     </div>`;
 }
 
+function toggleSection(sId) {
+  const body = document.getElementById(sId + '-body');
+  const arrow = document.getElementById(sId + '-arrow');
+  if (!body) return;
+  body.classList.toggle('collapsed');
+  if (arrow) arrow.classList.toggle('open');
+}
+
+function toggleSubgroup(id) {
+  const body = document.getElementById(id);
+  const arrow = document.getElementById(id + '-arrow');
+  if (!body) return;
+  body.classList.toggle('collapsed');
+  if (arrow) arrow.classList.toggle('open');
+}
+
+function renderSubgroup(id, labelHtml, tasks, statusKey, defaultOpen) {
+  const arrowId = id + '-arrow';
+  return `<div class="sprint-subgroup">
+    <div class="sprint-subgroup-hdr" onclick="toggleSubgroup('${id}')">
+      <span class="section-toggle-icon ${defaultOpen ? 'open' : ''}" id="${arrowId}">▶</span>
+      ${labelHtml} <span class="n">${tasks.length}</span>
+    </div>
+    <div class="sprint-subgroup-body${defaultOpen ? '' : ' collapsed'}" id="${id}">
+      ${taskTableHtml(tasks, statusKey)}
+    </div>
+  </div>`;
+}
+
+// Agrupa las tareas Active por sprint bucket y renderiza sub-secciones colapsables
+function renderActiveBySprintGroups(tasks) {
+  if (!tasks.length) return '<div class="state">Sin tareas por hacer.</div>';
+  const todayStr = ymd(new Date());
+  const sprintTasks = [], overdue = [], noDate = [];
+  const futureMap = new Map(); // isoWeek → {sprint, tasks:[]}
+
+  tasks.forEach(x => {
+    const due = taskDueYmd(x.task);
+    if (!due || isBacklogTask(x.task)) {
+      noDate.push(x);
+    } else if (inSprintRange(due, selectedSprint)) {
+      sprintTasks.push(x);
+    } else if (due < ymd(selectedSprint.start)) {
+      overdue.push(x);
+    } else {
+      // Futuro — agrupar por semana ISO
+      const d = new Date(due + 'T00:00:00');
+      const w = isoWeekNumber(d);
+      const yr = d.getFullYear();
+      if (!futureMap.has(w)) {
+        const start = tuesdayOfIsoWeek(w, yr);
+        futureMap.set(w, { sprint: sprintFromTuesday(start), tasks: [] });
+      }
+      futureMap.get(w).tasks.push(x);
+    }
+  });
+
+  const dm = d => String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0');
+  const sortedFuture = [...futureMap.keys()].sort((a,b) => a - b);
+  const curWeek = isoWeekNumber(selectedSprint.start);
+
+  let html = '';
+  if (sprintTasks.length) html += renderSubgroup('sg-sprint-actual', `🔵 Sprint S${curWeek} — actual`, sprintTasks, 'Active', true);
+  if (overdue.length) html += renderSubgroup('sg-overdue', '⚠ Vencidas', overdue, 'Active', true);
+  sortedFuture.forEach(w => {
+    const { sprint: sp, tasks: ft } = futureMap.get(w);
+    const label = `📅 Sprint S${w} — ${DOW_ES_CAP[sp.start.getDay()]} ${dm(sp.start)} al ${DOW_ES_CAP[sp.end.getDay()]} ${dm(sp.end)}`;
+    html += renderSubgroup('sg-sprint-' + w, label, ft, 'Active', false);
+  });
+  if (noDate.length) html += renderSubgroup('sg-no-date', '📋 Sin sprint', noDate, 'Active', false);
+
+  return html || '<div class="state">Sin tareas por hacer.</div>';
+}
+
 function renderStatusSections(byStatus) {
   const content = document.getElementById('content');
   let html = '';
   STATUS_SECTIONS.forEach(sec => {
     const tasks = byStatus[sec.key] || [];
-    html += `<div class="section-title">${sec.emoji} ${escapeHtml(sec.label)} <span class="n">${tasks.length}</span></div>`;
+    const sId = 'status-' + sec.key.toLowerCase();
+    const isOpen = sec.defaultOpen;
+    html += `<div class="section-title" onclick="toggleSection('${sId}')">
+      <span class="section-toggle-icon ${isOpen ? 'open' : ''}" id="${sId}-arrow">▶</span>
+      ${sec.emoji} ${escapeHtml(sec.label)} <span class="n">${tasks.length}</span>
+    </div>
+    <div id="${sId}-body" class="section-body${isOpen ? '' : ' collapsed'}">`;
     if (tasks.length) {
-      html += taskTableHtml(tasks, sec.key);
+      html += sec.key === 'Active' ? renderActiveBySprintGroups(tasks) : taskTableHtml(tasks, sec.key);
     } else {
       html += `<div class="state">Sin tareas ${escapeHtml(sec.label.toLowerCase())}.</div>`;
     }
+    html += '</div>';
   });
   content.innerHTML = html;
 }
