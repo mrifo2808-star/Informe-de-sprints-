@@ -39,6 +39,7 @@
   .kpi .sub{font-size:11px;color:var(--muted);margin-top:2px}
   .kpi.accent{border-left:4px solid var(--celeste)}
   .kpi.accent-green{border-left:4px solid var(--green)}
+  .kpi.accent-red{border-left:4px solid var(--red)}
 
   .loading{margin-top:40px;display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--muted);font-size:13px}
   .spin{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--celeste);border-radius:50%;animation:spin .7s linear infinite}
@@ -136,6 +137,13 @@
   .jef-load-green{color:var(--green)}
   .jef-person-hdr .n{background:var(--celestebg);color:var(--blue);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700}
   .jef-person-body.collapsed{display:none}
+
+  .badge-planta   { background:#e6f6ee; color:#2f855a; border:1px solid #9ae6b4 }
+  .badge-fulltime { background:#ebf8ff; color:#2b6cb0; border:1px solid #90cdf4 }
+  .badge-indefinido{ background:#fef3c7; color:#92400e; border:1px solid #fcd34d }
+  .badge-porhoras { background:#f3e8ff; color:#6b21a8; border:1px solid #c4b5fd }
+  .badge-g1       { background:#e6f6ee; color:#276749; font-size:9px; padding:1px 5px }
+  .badge-g2       { background:#f3e8ff; color:#553c9a; font-size:9px; padding:1px 5px }
 
   @media (max-width:600px){
     .hdr{flex-direction:column;align-items:flex-start}
@@ -1101,6 +1109,117 @@ function exportExcel() {
 }
 
 // ── JEFATURAS VIEW ───────────────────────────────────────────────────────
+// Lookup de staff WeLearn por email welearn.cl (fuente: Comite_Staff_v20260511.xlsx)
+// G1 = Planta + Full Time + Indefinido | G2 = Por Horas
+const STAFF_LOOKUP = {
+  'antonia.gomez@welearn.cl':      { contrato:'Planta',    cargo:'DIS', grupo:'G1' },
+  'barbara.andrade@welearn.cl':    { contrato:'Planta',    cargo:'DG',  grupo:'G1' },
+  'catalina.pinela@welearn.cl':    { contrato:'Planta',    cargo:'DG',  grupo:'G1' },
+  'david.ortega@welearn.cl':       { contrato:'Planta',    cargo:'DGS', grupo:'G1' },
+  'emilia.delacruz@welearn.cl':    { contrato:'Planta',    cargo:'SOP', grupo:'G1' },
+  'hayvic.adams@welearn.cl':       { contrato:'Planta',    cargo:'SOP', grupo:'G1' },
+  'jesus.perez@welearn.cl':        { contrato:'Planta',    cargo:'DGS', grupo:'G1' },
+  'jonathan.chirinos@welearn.cl':  { contrato:'Planta',    cargo:'DGS', grupo:'G1' },
+  'luisa.garcia@welearn.cl':       { contrato:'Planta',    cargo:'DIS', grupo:'G1' },
+  'marcelo.contreras@welearn.cl':  { contrato:'Planta',    cargo:'GOP', grupo:'G1' },
+  'matias.rifo@welearn.cl':        { contrato:'Planta',    cargo:'JP',  grupo:'G1' },
+  'roma.pavez@welearn.cl':         { contrato:'Planta',    cargo:'LQA', grupo:'G1' },
+  'roselyn.rodriguez@welearn.cl':  { contrato:'Planta',    cargo:'DGS', grupo:'G1' },
+  'rosio.canales@welearn.cl':      { contrato:'Planta',    cargo:'DIS', grupo:'G1' },
+  'sarahit.mora@welearn.cl':       { contrato:'Planta',    cargo:'DG',  grupo:'G1' },
+  'sasha.sanchez@welearn.cl':      { contrato:'Planta',    cargo:'DA',  grupo:'G1' },
+  'tatiana.aguilar@welearn.cl':    { contrato:'Planta',    cargo:'JP',  grupo:'G1' },
+  'teresita.veliz@welearn.cl':     { contrato:'Planta',    cargo:'JP',  grupo:'G1' },
+  'trinidad.marshall@welearn.cl':  { contrato:'Planta',    cargo:'SOP', grupo:'G1' },
+  'victor.herrera@welearn.cl':     { contrato:'Planta',    cargo:'DGS', grupo:'G1' },
+  'yrianny.mosquera@welearn.cl':   { contrato:'Planta',    cargo:'Gestor', grupo:'G1' },
+  'eduardo.bautista@welearn.cl':   { contrato:'Indefinido', cargo:'DI',  grupo:'G1' },
+  'erik.contreras@welearn.cl':     { contrato:'Indefinido', cargo:'DIS', grupo:'G1' },
+  'gabriela.osorio@welearn.cl':    { contrato:'Indefinido', cargo:'DI',  grupo:'G1' },
+  'geraldine.kabojian@welearn.cl': { contrato:'Indefinido', cargo:'DI',  grupo:'G1' },
+  'julia.campos@welearn.cl':       { contrato:'Indefinido', cargo:'DIS', grupo:'G1' },
+  'araque.manuel@welearn.cl':      { contrato:'Indefinido', cargo:'DGS', grupo:'G1' },
+  'sol.cichesi@welearn.cl':        { contrato:'Indefinido', cargo:'DIS', grupo:'G1' },
+  'miguel.cabrera@welearn.cl':     { contrato:'Indefinido', cargo:'SOP', grupo:'G1' },
+  'miriam.russi@welearn.cl':       { contrato:'Indefinido', cargo:'Lider DI', grupo:'G1' },
+  'nathalie.rengifo@welearn.cl':   { contrato:'Indefinido', cargo:'Gestor', grupo:'G1' },
+  'rosario.geronimo@welearn.cl':   { contrato:'Indefinido', cargo:'DIS', grupo:'G1' },
+  'silohe.valverde@welearn.cl':    { contrato:'Indefinido', cargo:'DI',  grupo:'G1' },
+  'yascarla.soto@welearn.cl':      { contrato:'Indefinido', cargo:'Gestor', grupo:'G1' },
+  'alessandro.alvarez@welearn.cl': { contrato:'Full Time',  cargo:'Gestor', grupo:'G1' },
+  'ana.schiavone@welearn.cl':      { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'emilio.farjat@welearn.cl':      { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'catalina.vargas@welearn.cl':    { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'vargas.claudia@welearn.cl':     { contrato:'Full Time',  cargo:'DIS', grupo:'G1' },
+  'deicy.mogollon@ext.welearn.cl': { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'franklin.ortiz@ext.welearn.cl': { contrato:'Full Time',  cargo:'SOP', grupo:'G1' },
+  'henry.arenas@welearn.cl':       { contrato:'Full Time',  cargo:'SOP', grupo:'G1' },
+  'jazmin.lopez@welearn.cl':       { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'jeannette.jofre@welearn.cl':    { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'jennifer.rios@ext.welearn.cl':  { contrato:'Full Time',  cargo:'SOP', grupo:'G1' },
+  'jessica.castillo@welearn.cl':   { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'jhennifer.rodriguez@welearn.cl':{ contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'juliana.rodriguez@ext.welearn.cl':{ contrato:'Full Time', cargo:'DI', grupo:'G1' },
+  'maria.scarafia@welearn.cl':     { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'maria.lanzoni@ext.welearn.cl':  { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'maria.palma@welearn.cl':        { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'maria.sanchez@welearn.cl':      { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'marialejandra.torres@welearn.cl':{ contrato:'Full Time', cargo:'DI',  grupo:'G1' },
+  'mariana.perez@welearn.cl':      { contrato:'Full Time',  cargo:'SOP', grupo:'G1' },
+  'milagros.gomez@ext.welearn.cl': { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'nathalia.duarte@welearn.cl':    { contrato:'Full Time',  cargo:'DG',  grupo:'G1' },
+  'nelly.olivares@ext.welearn.cl': { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'paola.saavedra@welearn.cl':     { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'paula.lopera@welearn.cl':       { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'yesid.perez@ext.welearn.cl':    { contrato:'Full Time',  cargo:'DI',  grupo:'G1' },
+  'aaron.becerra@welearn.cl':      { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'ana.garcia@welearn.cl':         { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'angela.farfan@ext.welearn.cl':  { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'bastian.foitzick@welearn.cl':   { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'carolina.ovalle@welearn.cl':    { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'claudia.rios@welearn.cl':       { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'cristian.mendoza@welearn.cl':   { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'cristian.bastias@welearn.cl':   { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'daissy.villagra@ext.welearn.cl':{ contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'dc.villagra.a@gmail.com':       { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'dayana.uzcategui@ext.welearn.cl':{ contrato:'Por Horas', cargo:'SOP', grupo:'G2' },
+  'deiry.riveros@welearn.cl':      { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'diego.rosas@welearn.cl':        { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'adriana.uriza@ext.welearn.cl':  { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'eileen.soto@ext.welearn.cl':    { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'elize.carcamo@welearn.cl':      { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'erick.yanez@ext.welearn.cl':    { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'erika.gallardo@externos.welearn.cl':{ contrato:'Por Horas', cargo:'DI', grupo:'G2' },
+  'gregory.zuleta@ext.welearn.cl': { contrato:'Por Horas',  cargo:'SOP', grupo:'G2' },
+  'hansen.cadena@ext.welearn.cl':  { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'hector.castillo@welearn.cl':    { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'jacqueline.farias@welearn.cl':  { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'jennifer.blanco@ext.welearn.cl':{ contrato:'Por Horas',  cargo:'SOP', grupo:'G2' },
+  'jenny.garcia@ext.welearn.cl':   { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'jessica.barco@ext.welearn.cl':  { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'jpiredesigner@gmail.com':       { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'kevin.bejarano@welearn.cl':     { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'kevin.figueres@welearn.cl':     { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'luis.mallque@ext.welearn.cl':   { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'marcela.celiz@ext.welearn.cl':  { contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'mauriely.colmenares@welearn.cl':{ contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'p.garcia.tav@gmail.com':        { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'paola.melo@welearn.cl':         { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'pasifae.hernandez@ext.welearn.cl':{ contrato:'Por Horas', cargo:'DI', grupo:'G2' },
+  'rodrigo.bea@welearn.cl':        { contrato:'Por Horas',  cargo:'DG',  grupo:'G2' },
+  'sandra.renteria@ext.welearn.cl':{ contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+  'wender.trujillo@ext.welearn.cl':{ contrato:'Por Horas',  cargo:'DI',  grupo:'G2' },
+};
+
+// Dado un contacto de Wrike, retorna su entrada del staff lookup (o null)
+function getStaffInfo(contact) {
+  const emails = (contact.profiles || []).map(p => (p.email || '').toLowerCase());
+  for (const email of emails) {
+    if (STAFF_LOOKUP[email]) return STAFF_LOOKUP[email];
+  }
+  return null;
+}
+
 const JEF_AREAS = ['DI', 'Producción', 'Soporte'];
 let jefSelectedArea = 'DI';
 let jefLoading = false;
@@ -1188,6 +1307,8 @@ function renderJefaturas(personTaskMap) {
   const people = [];
   let totalTasksCount = 0;
   let totalHoursCount = 0;
+  let g1Count = 0, g1Hours = 0, g1Alert = 0;
+  let g2Count = 0, g2Hours = 0;
 
   contacts.forEach(contact => {
     const rawTasks = personTaskMap.get(contact.id) || [];
@@ -1206,7 +1327,15 @@ function renderJefaturas(personTaskMap) {
     totalTasksCount += filtered.length;
     totalHoursCount += activeHours + completedHours;
 
-    people.push({ contact, tasks: filtered, activeHours, completedHours });
+    const staffInfo = getStaffInfo(contact);
+    if (staffInfo && staffInfo.grupo === 'G1') {
+      g1Count++; g1Hours += activeHours;
+      if (activeHours < 36.5) g1Alert++;
+    } else if (staffInfo && staffInfo.grupo === 'G2') {
+      g2Count++; g2Hours += activeHours;
+    }
+
+    people.push({ contact, tasks: filtered, activeHours, completedHours, staffInfo });
   });
 
   people.sort((a, b) => fullName(a.contact).localeCompare(fullName(b.contact), 'es'));
@@ -1229,22 +1358,51 @@ function renderJefaturas(personTaskMap) {
       <div class="label">Horas totales</div>
       <div class="val">${totalHoursCount.toFixed(1)}</div>
       <div class="sub">activas + finalizadas</div>
-    </div>`;
+    </div>
+    <div class="kpi">
+      <div class="label">G1</div>
+      <div class="val">${g1Count}</div>
+      <div class="sub">${g1Hours.toFixed(1)} h activas</div>
+    </div>
+    <div class="kpi">
+      <div class="label">G2</div>
+      <div class="val">${g2Count}</div>
+      <div class="sub">${g2Hours.toFixed(1)} h activas</div>
+    </div>
+    ${g1Alert > 0 ? `
+    <div class="kpi accent-red">
+      <div class="label">Alerta G1</div>
+      <div class="val">${g1Alert}</div>
+      <div class="sub">bajo 36.5h activas</div>
+    </div>` : ''}`;
 
   const contentEl = document.getElementById('jef-content');
   if (!people.length) {
     contentEl.innerHTML = `<div class="state">Nadie tiene tareas de ${escapeHtml(jefSelectedArea)} en Sprint S${w}.</div>`;
     return;
   }
-  contentEl.innerHTML = people.map((p, i) => renderPersonJefCard(p.contact, p.tasks, p.activeHours, p.completedHours, i)).join('');
+  contentEl.innerHTML = people.map((p, i) => renderPersonJefCard(p.contact, p.tasks, p.activeHours, p.completedHours, p.staffInfo, i)).join('');
 }
 
-function renderPersonJefCard(contact, tasks, activeHours, completedHours, idx) {
+const CONTRATO_BADGE_CLASS = { 'Planta':'badge-planta', 'Full Time':'badge-fulltime', 'Indefinido':'badge-indefinido', 'Por Horas':'badge-porhoras' };
+
+function renderPersonJefCard(contact, tasks, activeHours, completedHours, staffInfo, idx) {
   const bodyId = 'jef-person-' + idx;
   let loadClass, loadEmoji, loadLabel;
-  if (activeHours < 20) { loadClass = 'jef-load-red'; loadEmoji = '🔴'; loadLabel = 'Necesita tareas'; }
+  if (staffInfo && staffInfo.grupo === 'G1') {
+    if (activeHours >= 37.5) { loadClass = 'jef-load-green'; loadEmoji = '🟢'; loadLabel = 'Dentro'; }
+    else if (activeHours >= 36.5) { loadClass = 'jef-load-amber'; loadEmoji = '🟡'; loadLabel = 'Margen'; }
+    else { loadClass = 'jef-load-red'; loadEmoji = '🔴'; loadLabel = 'Alerta'; }
+  } else if (staffInfo && staffInfo.grupo === 'G2') {
+    if (activeHours >= 37.5) { loadClass = 'jef-load-green'; loadEmoji = '🟢'; loadLabel = 'Dentro'; }
+    else { loadClass = 'jef-load-amber'; loadEmoji = '🟡'; loadLabel = 'Variable'; }
+  } else if (activeHours < 20) { loadClass = 'jef-load-red'; loadEmoji = '🔴'; loadLabel = 'Necesita tareas'; }
   else if (activeHours < 40) { loadClass = 'jef-load-amber'; loadEmoji = '🟡'; loadLabel = 'Carga parcial'; }
   else { loadClass = 'jef-load-green'; loadEmoji = '🟢'; loadLabel = 'Jornada completa'; }
+
+  const contratoBadge = staffInfo
+    ? `<span class="badge ${CONTRATO_BADGE_CLASS[staffInfo.contrato] || ''}">${escapeHtml(staffInfo.contrato)}</span> <span class="badge ${staffInfo.grupo === 'G1' ? 'badge-g1' : 'badge-g2'}">${escapeHtml(staffInfo.grupo)}</span>`
+    : '';
 
   const sorted = [...tasks].sort((a, b) => (taskDueYmd(a) || '9999-99-99').localeCompare(taskDueYmd(b) || '9999-99-99'));
 
@@ -1271,6 +1429,7 @@ function renderPersonJefCard(contact, tasks, activeHours, completedHours, idx) {
     <div class="jef-person-hdr" onclick="toggleSubgroup('${bodyId}')">
       <span class="section-toggle-icon" id="${bodyId}-arrow">▶</span>
       <span class="jef-person-name">${escapeHtml(fullName(contact))}</span>
+      ${contratoBadge}
       <span class="jef-hours">${activeHours.toFixed(1)}h activas · ${completedHours.toFixed(1)}h completadas</span>
       <span class="jef-load-dot">${loadEmoji}</span>
       <span class="jef-load-label ${loadClass}">${loadLabel}</span>
