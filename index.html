@@ -228,10 +228,19 @@ let contacts = [];       // personas activas filtradas
 let folderInfoCache = new Map(); // folderId -> {title, parentIds, permalink}|null
 let currentSprint = null;  // sprint REAL de hoy (para badges "Vencida"/"Sprint actual")
 let selectedSprint = null; // sprint que se está navegando/viendo
-let allActiveTasks = [];   // todas las tareas Active únicas (deduplicadas) de la persona seleccionada, con espacio/carpeta resueltos
-let lastFetchStats = null; // {rawCount, uniqueCount, duplicatesRemoved} del último fetch — ver loadPersonTasks
+let allActiveTasks = [];   // todas las tareas únicas (deduplicadas) de la persona seleccionada, con espacio/carpeta resueltos
+let lastFetchStats = null; // {rawCount, uniqueCount} del último fetch
 let isLoading = false;
 let selectedArea = '';     // '' = todas las áreas
+let areaContactIds = null; // null = sin filtro, Set<id> = personas del área seleccionada
+
+// Secciones por status
+const STATUS_SECTIONS = [
+  { key: 'Active',    label: 'Tareas por hacer', emoji: '🔵', defaultOpen: true  },
+  { key: 'Completed', label: 'Finalizadas',       emoji: '✅', defaultOpen: true  },
+  { key: 'Deferred',  label: 'Diferidas',         emoji: '⏸',  defaultOpen: false },
+  { key: 'Cancelled', label: 'Canceladas',        emoji: '❌', defaultOpen: false }
+];
 
 // ── WRIKE FETCH ──────────────────────────────────────────────────────────
 async function wrike(path, params = {}) {
@@ -303,7 +312,7 @@ function forgetToken() {
   localStorage.removeItem(TOKEN_KEY);
   token = null;
   spaces = []; spaceIdSet = new Set(); contacts = []; folderInfoCache = new Map(); allActiveTasks = [];
-  selectedArea = '';
+  selectedArea = ''; areaContactIds = null;
   document.getElementById('refreshBtn').style.display = 'none';
   document.getElementById('forgetBtn').style.display = 'none';
   document.getElementById('controls').style.display = 'none';
@@ -435,9 +444,13 @@ async function loadContacts() {
 function renderPersonSelect() {
   const sel = document.getElementById('personSel');
   const cur = sel.value;
-  sel.innerHTML = '<option value="">Selecciona una persona…</option>' +
-    contacts.map(c => `<option value="${c.id}">${escapeHtml(fullName(c))}</option>`).join('');
-  if (cur) sel.value = cur;
+  const visible = areaContactIds
+    ? contacts.filter(c => areaContactIds.has(c.id))
+    : contacts;
+  const countNote = areaContactIds ? ` (${visible.length} en esta área)` : '';
+  sel.innerHTML = `<option value="">Selecciona una persona…${countNote}</option>` +
+    visible.map(c => `<option value="${c.id}">${escapeHtml(fullName(c))}</option>`).join('');
+  if (cur && visible.find(c => c.id === cur)) sel.value = cur;
 }
 
 // ── SPACES ───────────────────────────────────────────────────────────────
@@ -529,10 +542,60 @@ function renderAreaSelect() {
     AREA_VALUES.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
   if (cur) sel.value = cur;
 }
-function onAreaChange() {
-  selectedArea = document.getElementById('areaSel').value;
-  renderFromCache();
+
+// Busca tareas con el área dada — solo necesitamos los responsibleIds
+async function fetchTasksForArea(areaValue) {
+  return paginateAll((nextPageToken) => {
+    const params = {
+      fields: ['responsibleIds'],
+      customFields: [{ id: AREA_CF_ID, comparator: 'EqualTo', value: areaValue }],
+      pageSize: 1000
+    };
+    if (nextPageToken) params.nextPageToken = nextPageToken;
+    return wrike('/tasks', params);
+  });
 }
+
+async function onAreaChange() {
+  selectedArea = document.getElementById('areaSel').value;
+  if (selectedArea) {
+    const areaSel = document.getElementById('areaSel');
+    areaSel.disabled = true;
+    const status = document.getElementById('connStatus');
+    const prevStatus = status.textContent;
+    status.textContent = `Buscando personas del área "${selectedArea}"…`;
+    status.className = 'conn-status';
+    try {
+      const tasks = await fetchTasksForArea(selectedArea);
+      const ids = new Set(tasks.flatMap(t => t.responsibleIds || []));
+      areaContactIds = ids;
+    } catch (e) {
+      console.warn('No se pudo filtrar por área:', e);
+      areaContactIds = null;
+    } finally {
+      areaSel.disabled = false;
+      document.getElementById('connStatus').textContent = prevStatus;
+      document.getElementById('connStatus').className = 'conn-status ok';
+    }
+  } else {
+    areaContactIds = null;
+  }
+  renderPersonSelect(); // refresca la lista de personas
+  // Si ya había una persona seleccionada y ya no está en el área, re-render vacío
+  const personSel = document.getElementById('personSel');
+  if (personSel.value) {
+    if (areaContactIds && !areaContactIds.has(personSel.value)) {
+      personSel.value = '';
+      allActiveTasks = [];
+      document.getElementById('summary').style.display = 'none';
+      document.getElementById('content').innerHTML = '';
+      document.getElementById('exportBtn').style.display = 'none';
+    } else {
+      renderFromCache();
+    }
+  }
+}
+
 // Tareas filtradas por área seleccionada (client-side)
 function filteredByArea() {
   if (!selectedArea) return allActiveTasks;
@@ -556,6 +619,32 @@ async function fetchAllTasksForContact(contactId) {
     if (nextPageToken) params.nextPageToken = nextPageToken;
     return wrike('/tasks', params);
   });
+}
+
+// Tareas completadas en los últimos `days` días
+async function fetchCompletedTasksForContact(contactId, days) {
+  try {
+    const now = new Date();
+    const since = new Date(now);
+    since.setDate(since.getDate() - days);
+    return paginateAll((nextPageToken) => {
+      const params = {
+        fields: TASK_FIELDS,
+        responsibles: [contactId],
+        status: ['Completed'],
+        completedDate: {
+          start: since.getFullYear() + '-' + String(since.getMonth()+1).padStart(2,'0') + '-' + String(since.getDate()).padStart(2,'0') + 'T00:00:00Z',
+          end: now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0') + 'T23:59:59Z'
+        },
+        pageSize: 500
+      };
+      if (nextPageToken) params.nextPageToken = nextPageToken;
+      return wrike('/tasks', params);
+    });
+  } catch (e) {
+    console.warn('No se pudieron cargar tareas completadas:', e);
+    return [];
+  }
 }
 
 function effortHours(task) {
@@ -611,15 +700,17 @@ async function loadPersonTasks(contactId) {
   document.getElementById('exportBtn').style.display = 'none';
   showLoading('Cargando tareas…');
   try {
-    const raw = await fetchAllTasksForContact(contactId);
-    const activeOnly = raw.filter(t => t.status === 'Active');
-    // Dedup por task.id: la misma tarea puede volver más de una vez entre
-    // páginas de una misma consulta. Se queda con la primera ocurrencia.
+    // Fetch activas + completadas recientes en paralelo
+    const [rawAll, rawCompleted] = await Promise.all([
+      fetchAllTasksForContact(contactId),
+      fetchCompletedTasksForContact(contactId, 30) // últimos 30 días
+    ]);
+    // Combinar y dedup por task.id
     const taskMap = new Map();
-    activeOnly.forEach(t => { if (!taskMap.has(t.id)) taskMap.set(t.id, t); });
+    [...rawAll, ...rawCompleted].forEach(t => { if (!taskMap.has(t.id)) taskMap.set(t.id, t); });
     const deduped = Array.from(taskMap.values());
-    lastFetchStats = { rawCount: activeOnly.length, uniqueCount: deduped.length, duplicatesRemoved: activeOnly.length - deduped.length };
-    console.log(`[Sprint Tracking] Tareas Active traídas: ${activeOnly.length} crudas → ${deduped.length} únicas (${lastFetchStats.duplicatesRemoved} duplicadas eliminadas)`);
+    lastFetchStats = { rawCount: rawAll.length + rawCompleted.length, uniqueCount: deduped.length };
+    console.log(`[Sprint Tracking] Tareas traídas: ${deduped.length} únicas (activas: ${rawAll.length}, completadas recientes: ${rawCompleted.length})`);
 
     showLoading('Resolviendo espacios y carpetas…');
     await resolveSpaceChains(deduped);
@@ -676,65 +767,72 @@ function bucketize(tasks, sprint) {
   return { backlog, overdue, sprintTasks };
 }
 
-// Re-renderiza desde allActiveTasks (ya en memoria) para el selectedSprint
-// actual — no hace ninguna llamada nueva a Wrike.
+// Re-renderiza desde allActiveTasks (ya en memoria) — no hace llamadas a Wrike.
 function renderFromCache() {
   if (!allActiveTasks.length) {
     document.getElementById('summary').style.display = 'none';
     document.getElementById('content').innerHTML = document.getElementById('personSel').value
-      ? '<div class="state">Esta persona no tiene tareas activas asignadas en ningún espacio.</div>'
+      ? '<div class="state">Esta persona no tiene tareas asignadas.</div>'
       : '';
     return;
   }
   const tasksForArea = filteredByArea();
-  const { backlog, overdue, sprintTasks } = bucketize(tasksForArea, selectedSprint);
-  renderSummary(sprintTasks, overdue, backlog);
-  renderTaskSections(sprintTasks, overdue, backlog);
+  // Agrupar por status
+  const byStatus = {};
+  STATUS_SECTIONS.forEach(s => { byStatus[s.key] = []; });
+  tasksForArea.forEach(x => {
+    const s = x.task.status || 'Active';
+    if (!byStatus[s]) byStatus[s] = [];
+    byStatus[s].push(x);
+  });
+  renderSummary(byStatus);
+  renderStatusSections(byStatus);
 }
 
-function renderSummary(sprintTasks, overdue, backlog) {
-  const totalHours = sprintTasks.reduce((sum, x) => sum + effortHours(x.task), 0);
+function renderSummary(byStatus) {
+  const active = byStatus['Active'] || [];
+  const completed = byStatus['Completed'] || [];
+  const deferred = byStatus['Deferred'] || [];
+  const totalActiveHours = active.reduce((sum, x) => sum + effortHours(x.task), 0);
+  const todayStr = ymd(new Date());
+  const overdueCount = active.filter(x => { const d = taskDueYmd(x.task); return d && d < todayStr; }).length;
+  const sprintCount = active.filter(x => inSprintRange(taskDueYmd(x.task), selectedSprint)).length;
   const summaryEl = document.getElementById('summary');
   summaryEl.style.display = 'grid';
   summaryEl.innerHTML = `
     <div class="kpi accent">
-      <div class="label">Tareas en ${escapeHtml('S' + isoWeekNumber(selectedSprint.start))}</div>
-      <div class="val">${sprintTasks.length}</div>
-      <div class="sub">con fecha en este sprint</div>
+      <div class="label">Por hacer</div>
+      <div class="val">${active.length}</div>
+      <div class="sub">${sprintCount} en sprint · ${overdueCount} vencidas</div>
     </div>
     <div class="kpi accent">
-      <div class="label">Horas del Sprint</div>
-      <div class="val">${totalHours.toFixed(1)}</div>
-      <div class="sub">effortAllocation total</div>
-    </div>
-    <div class="kpi" style="${overdue.length ? 'border-left:4px solid var(--red)' : ''}">
-      <div class="label">Vencidas</div>
-      <div class="val" style="${overdue.length ? 'color:var(--red)' : ''}">${overdue.length}</div>
-      <div class="sub">dueDate anterior a hoy</div>
+      <div class="label">Horas estimadas</div>
+      <div class="val">${totalActiveHours.toFixed(1)}</div>
+      <div class="sub">effortAllocation activas</div>
     </div>
     <div class="kpi accent-green">
-      <div class="label">Backlog (sin fecha)</div>
-      <div class="val">${backlog.length}</div>
-      <div class="sub">independiente del sprint</div>
+      <div class="label">Finalizadas</div>
+      <div class="val">${completed.length}</div>
+      <div class="sub">últimos 30 días</div>
+    </div>
+    <div class="kpi" style="${deferred.length ? 'border-left:4px solid var(--amber)' : ''}">
+      <div class="label">Diferidas</div>
+      <div class="val" style="${deferred.length ? 'color:var(--amber)' : ''}">${deferred.length}</div>
+      <div class="sub">en espera</div>
     </div>`;
 }
 
-function taskTableRow(x, i, sectionType) {
+function taskTableRow(x, i, statusKey) {
   const t = x.task;
-  const hrs = effortHours(t).toFixed(1) + ' hrs';
-  const statusCls = STATUS_CLASS[t.status] || 'badge-deferred';
-  const statusLbl = STATUS_LABEL[t.status] || t.status || '—';
+  const hrs = effortHours(t) > 0 ? effortHours(t).toFixed(1) + ' hrs' : '—';
   const titleHtml = t.permalink
     ? `<a class="task-link" href="${escapeHtml(t.permalink)}" target="_blank" rel="noopener">${escapeHtml(t.title || '(sin título)')}</a>`
     : `<span class="task-title-plain">${escapeHtml(t.title || '(sin título)')}</span>`;
 
-  // Folder: link clickeable si hay permalink
-  const folderLabel = x.folderTitle || '—';
+  // Folder con link
   const folderHtml = (x.folderTitle && x.folderPermalink)
     ? `<a class="task-link" href="${escapeHtml(x.folderPermalink)}" target="_blank" rel="noopener">${escapeHtml(x.folderTitle)}</a>`
     : (x.folderTitle ? escapeHtml(x.folderTitle) : '<span style="color:var(--muted)">—</span>');
-
-  // Tablero (código de proyecto) — se muestra debajo del folder si existe
   const tablero = getTaskTablero(t);
   const folderCell = tablero
     ? `${folderHtml}<br><small style="color:var(--muted);font-size:10px">${escapeHtml(tablero)}</small>`
@@ -746,14 +844,28 @@ function taskTableRow(x, i, sectionType) {
     ? `<span class="area-badge ${areaCssClass(area)}">${escapeHtml(area)}</span>`
     : '<span style="color:var(--muted);font-size:11px">—</span>';
 
-  let dueCell;
-  if (sectionType === 'backlog') {
-    dueCell = '<span class="col-due backlog-tag">Backlog</span>';
+  // Columna de fecha / estado según sección
+  let dateCell;
+  if (statusKey === 'Active') {
+    const due = taskDueYmd(t);
+    const todayStr = ymd(new Date());
+    if (!due || isBacklogTask(t)) {
+      dateCell = '<span class="col-due backlog-tag">Sin fecha</span>';
+    } else if (due < todayStr) {
+      dateCell = `<span class="col-due overdue">⚠ ${fmtTaskDate(due)}</span>`;
+    } else if (inSprintRange(due, selectedSprint)) {
+      dateCell = `<span class="col-due" style="color:var(--blue);font-weight:700">🔵 ${fmtTaskDate(due)}</span>`;
+    } else {
+      dateCell = `<span class="col-due">${fmtTaskDate(due)}</span>`;
+    }
+  } else if (statusKey === 'Completed') {
+    const cd = t.dates && t.dates.completedDate;
+    dateCell = cd ? `<span class="col-due" style="color:var(--green)">✓ ${fmtTaskDate(cd)}</span>` : '—';
   } else {
     const due = taskDueYmd(t);
-    const cls = sectionType === 'overdue' ? 'col-due overdue' : 'col-due';
-    dueCell = `<span class="${cls}">${fmtTaskDate(due)}</span>`;
+    dateCell = `<span class="col-due">${fmtTaskDate(due)}</span>`;
   }
+
   return `<tr>
     <td class="col-num">${i + 1}</td>
     <td>${titleHtml}</td>
@@ -761,26 +873,42 @@ function taskTableRow(x, i, sectionType) {
     <td>${folderCell}</td>
     <td>${areaBadge}</td>
     <td class="col-effort">${hrs}</td>
-    <td><span class="badge ${statusCls}">${escapeHtml(statusLbl)}</span></td>
-    <td>${dueCell}</td>
+    <td>${dateCell}</td>
   </tr>`;
 }
 
-function taskTableHtml(entries, sectionType) {
+function taskTableHtml(entries, statusKey) {
+  // Ordenar: Active por fecha (vencidas primero, luego sprint actual, luego futuras, luego sin fecha)
+  //          Completed por fecha completada desc
+  //          otros: por título
   const sorted = [...entries].sort((a, b) => {
-    if (sectionType === 'backlog') {
-      return a.spaceTitle.localeCompare(b.spaceTitle, 'es') || (a.task.title || '').localeCompare(b.task.title || '', 'es');
+    if (statusKey === 'Active') {
+      const todayStr = ymd(new Date());
+      const da = taskDueYmd(a.task) || '9999-99-99';
+      const db = taskDueYmd(b.task) || '9999-99-99';
+      // Vencidas primero (menor fecha que hoy), luego por fecha asc
+      const aOver = da < todayStr, bOver = db < todayStr;
+      if (aOver && !bOver) return -1;
+      if (!aOver && bOver) return 1;
+      return da.localeCompare(db);
     }
-    return (taskDueYmd(a.task) || '').localeCompare(taskDueYmd(b.task) || '');
+    if (statusKey === 'Completed') {
+      const ca = (a.task.dates && a.task.dates.completedDate) || '';
+      const cb = (b.task.dates && b.task.dates.completedDate) || '';
+      return cb.localeCompare(ca); // más reciente primero
+    }
+    return (a.task.title || '').localeCompare(b.task.title || '', 'es');
   });
-  const rows = sorted.map((x, i) => taskTableRow(x, i, sectionType)).join('');
+
+  const dateHeader = statusKey === 'Completed' ? 'Fecha completada' : 'Fecha';
+  const rows = sorted.map((x, i) => taskTableRow(x, i, statusKey)).join('');
   return `
     <div class="table-wrap">
       <div class="table-scroll">
         <table class="task-table">
           <thead><tr>
             <th>#</th><th>Tarea</th><th>Espacio</th><th>Carpeta / Proyecto</th>
-            <th>Área</th><th>Esfuerzo</th><th>Estado</th><th>Fecha término</th>
+            <th>Área</th><th>Esfuerzo</th><th>${dateHeader}</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -788,16 +916,18 @@ function taskTableHtml(entries, sectionType) {
     </div>`;
 }
 
-function renderTaskSections(sprintTasks, overdue, backlog) {
+function renderStatusSections(byStatus) {
   const content = document.getElementById('content');
-  const sprintTitle = sprintLabel(selectedSprint).replace('Sprint ', '');
   let html = '';
-  html += `<div class="section-title">Sprint ${escapeHtml(sprintTitle)} <span class="n">${sprintTasks.length}</span></div>`;
-  html += sprintTasks.length ? taskTableHtml(sprintTasks, 'sprint') : '<div class="state">Sin tareas con fecha en este sprint.</div>';
-  html += `<div class="section-title">⚠ Vencidas <span class="n">${overdue.length}</span></div>`;
-  html += overdue.length ? taskTableHtml(overdue, 'overdue') : '<div class="state">Sin tareas vencidas.</div>';
-  html += `<div class="section-title">📋 Backlog / Sin fecha <span class="n">${backlog.length}</span></div>`;
-  html += backlog.length ? taskTableHtml(backlog, 'backlog') : '<div class="state">Sin tareas backlog.</div>';
+  STATUS_SECTIONS.forEach(sec => {
+    const tasks = byStatus[sec.key] || [];
+    html += `<div class="section-title">${sec.emoji} ${escapeHtml(sec.label)} <span class="n">${tasks.length}</span></div>`;
+    if (tasks.length) {
+      html += taskTableHtml(tasks, sec.key);
+    } else {
+      html += `<div class="state">Sin tareas ${escapeHtml(sec.label.toLowerCase())}.</div>`;
+    }
+  });
   content.innerHTML = html;
 }
 
@@ -812,14 +942,21 @@ function exportExcel() {
   const todayStr = ymd(new Date());
   const weekLabel = 'S' + isoWeekNumber(selectedSprint.start);
   const tasksForArea = filteredByArea();
-  const { backlog, overdue, sprintTasks } = bucketize(tasksForArea, selectedSprint);
+  const byStatus = {};
+  STATUS_SECTIONS.forEach(s => { byStatus[s.key] = []; });
+  tasksForArea.forEach(x => {
+    const s = x.task.status || 'Active';
+    if (!byStatus[s]) byStatus[s] = [];
+    byStatus[s].push(x);
+  });
 
   const rows = [];
-  function pushRows(list, sprintCol) {
-    list.forEach(x => {
+  STATUS_SECTIONS.forEach(sec => {
+    (byStatus[sec.key] || []).forEach(x => {
       const t = x.task;
+      const completedDate = (t.dates && t.dates.completedDate) ? t.dates.completedDate.slice(0,10) : '';
       rows.push({
-        'Sprint': sprintCol,
+        'Estado': sec.label,
         'Persona': personName,
         'Área': getTaskArea(t),
         'Nombre de tarea': t.title || '',
@@ -827,17 +964,14 @@ function exportExcel() {
         'Carpeta/Proyecto': x.folderTitle || '',
         'Código de proyecto': getTaskTablero(t),
         'Esfuerzo (hrs)': Number(effortHours(t).toFixed(1)),
-        'Estado': STATUS_LABEL[t.status] || t.status || '',
         'Fecha inicio': taskStartYmd(t) || '',
         'Fecha término': taskDueYmd(t) || '',
+        'Fecha completada': completedDate,
         'URL Tarea': t.permalink || '',
         'URL Carpeta': x.folderPermalink || ''
       });
     });
-  }
-  pushRows(sprintTasks, weekLabel);
-  pushRows(overdue, weekLabel + ' (vencida)');
-  pushRows(backlog, 'Backlog');
+  });
 
   if (!rows.length) { alert('No hay tareas visibles para exportar.'); return; }
 
@@ -845,7 +979,7 @@ function exportExcel() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sprint');
   const safeName = personName.replace(/\s+/g, '_').replace(/[\\/:*?"<>|]/g, '');
-  XLSX.writeFile(wb, `Sprint_${weekLabel}_${safeName}_${todayStr}.xlsx`);
+  XLSX.writeFile(wb, `Tareas_${weekLabel}_${safeName}_${todayStr}.xlsx`);
 }
 
 // ── BOOTSTRAP ────────────────────────────────────────────────────────────
