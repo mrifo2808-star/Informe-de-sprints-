@@ -46,23 +46,28 @@
 
   .state{margin-top:40px;text-align:center;color:var(--muted);font-size:13.5px;padding:30px}
 
-  .space-group{margin-top:20px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-  .space-hdr{background:var(--navy);color:#fff;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px}
-  .space-hdr .name{font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
-  .space-hdr .count{font-size:11.5px;background:rgba(255,255,255,.16);padding:3px 10px;border-radius:999px}
-  .task-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:14px}
-
-  .task-card{border:1px solid var(--border);border-radius:7px;padding:12px;background:#fbfcfe;display:flex;flex-direction:column;gap:7px}
-  .task-title{font-size:13px;font-weight:700;color:var(--text);line-height:1.35}
-  .task-path{font-size:11px;color:var(--muted)}
-  .task-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px}
-  .task-effort{font-weight:700;color:var(--navy)}
-  .badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  .badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
   .badge-active{background:var(--celestebg);color:var(--blue)}
   .badge-completed{background:var(--greenbg);color:var(--green)}
   .badge-deferred{background:var(--graybg);color:var(--gray)}
   .badge-cancelled{background:var(--redbg);color:var(--red)}
-  .task-dates{font-size:11px;color:var(--muted)}
+  .badge-backlog{background:var(--graybg);color:var(--gray)}
+
+  .table-wrap{margin-top:18px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .table-scroll{overflow-x:auto}
+  table.task-table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px}
+  table.task-table thead th{background:var(--navy);color:#fff;padding:10px 12px;text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;position:sticky;top:0;z-index:1}
+  table.task-table tbody td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+  table.task-table tbody tr:hover{background:var(--celestebg)}
+  table.task-table tbody tr:last-child td{border-bottom:none}
+  .col-num{color:var(--muted);width:34px}
+  .task-link{color:var(--blue);text-decoration:none;font-weight:600}
+  .task-link:hover{text-decoration:underline}
+  .task-title-plain{font-weight:600;color:var(--text)}
+  .col-effort{font-weight:700;color:var(--navy);white-space:nowrap}
+  .col-due{white-space:nowrap}
+  .col-due.overdue{color:var(--red);font-weight:700}
+  .col-due.backlog-tag{color:var(--muted);font-style:italic}
 
   .modal-bg{display:none;position:fixed;inset:0;background:rgba(15,42,74,.55);align-items:center;justify-content:center;z-index:50;padding:16px}
   .modal-bg.show{display:flex}
@@ -77,21 +82,19 @@
   .btn{width:100%;padding:10px;border-radius:6px;border:1px solid var(--celeste);background:var(--celeste);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer}
   .btn:hover{background:#3182ce}
 
+  .sprint-block{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
   .sprint-nav{display:flex;align-items:center;gap:6px}
   .sprint-nav button{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer}
   .sprint-nav button:hover{background:rgba(255,255,255,.22)}
+  .sprint-nav button.current-btn{background:var(--celeste);border-color:var(--celeste)}
+  .sprint-nav button.current-btn:hover{background:#3182ce}
   .sprint-jump{display:flex;align-items:center;gap:4px}
   .sprint-jump input{width:52px;padding:6px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);color:#fff;font-size:12px;text-align:center}
   .sprint-jump input::placeholder{color:#bcd7f0}
   .sprint-jump button{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:6px 9px;font-size:12px;font-weight:600;cursor:pointer}
 
-  .badge-vencida{background:var(--redbg);color:var(--red)}
-  .badge-sprint-actual{background:var(--greenbg);color:var(--green)}
-  .badge-backlog{background:var(--graybg);color:var(--gray)}
-
   .section-title{font-size:12px;font-weight:800;color:var(--navy);text-transform:uppercase;letter-spacing:.5px;margin:24px 0 8px;display:flex;align-items:center;gap:8px}
   .section-title .n{background:var(--celestebg);color:var(--blue);border-radius:999px;padding:2px 9px;font-size:11px}
-  .backlog-group .space-hdr{background:var(--gray)}
 
   .export-btn{background:var(--green);border:1px solid var(--green);color:#fff;border-radius:6px;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
   .export-btn:hover{background:#276749}
@@ -117,10 +120,13 @@
         </div>
       </div>
       <div class="hdr-actions">
-        <div class="sprint-nav">
-          <button onclick="navigateSprint(-1)" title="Sprint anterior">‹ Anterior</button>
-          <span id="sprintBadge" class="sprint-badge">Sprint: —</span>
-          <button onclick="navigateSprint(1)" title="Sprint siguiente">Siguiente ›</button>
+        <div class="sprint-block">
+          <div id="sprintBadge" class="sprint-badge">Sprint: —</div>
+          <div class="sprint-nav">
+            <button id="sprintPrevBtn" onclick="navigateSprint(-1)" title="Sprint anterior">‹ S—</button>
+            <button id="sprintCurrentBtn" class="current-btn" onclick="goToCurrentSprint()" title="Volver al sprint actual">S— actual</button>
+            <button id="sprintNextBtn" onclick="navigateSprint(1)" title="Sprint siguiente">S— ›</button>
+          </div>
         </div>
         <div class="sprint-jump">
           <input type="number" id="sprintJumpInput" min="1" max="53" placeholder="Nº">
@@ -181,14 +187,19 @@ const EXCLUDED_EMAILS = new Set([
 // 'status' y 'dates' NO van en fields — Wrike los devuelve siempre por defecto,
 // y pedirlos explícitamente en el array `fields` causa HTTP 400 (confirmado
 // contra la API real: ver commit que corrigió este bug).
-const TASK_FIELDS = ['effortAllocation', 'responsibleIds', 'parentIds', 'spaceId', 'superTaskIds'];
+// 'spaceId' se sacó de esta lista: confirmado contra datos reales que viene
+// vacío en la práctica (62/62 tareas revisadas) — la atribución de espacio se
+// resuelve subiendo por parentIds (ver resolveTaskSpaceAndFolder).
+const TASK_FIELDS = ['effortAllocation', 'responsibleIds', 'parentIds', 'superTaskIds'];
 
 let spaces = [];         // [{id,title}]
+let spaceIdSet = new Set(); // Set de space ids — para saber cuándo un parentId ES un espacio
 let contacts = [];       // personas activas filtradas
-let folderCache = new Map(); // folderId -> title|null
+let folderInfoCache = new Map(); // folderId -> {title, parentIds}|null
 let currentSprint = null;  // sprint REAL de hoy (para badges "Vencida"/"Sprint actual")
 let selectedSprint = null; // sprint que se está navegando/viendo
-let allActiveTasks = [];   // todas las tareas Active de la persona seleccionada (sin filtro de fecha)
+let allActiveTasks = [];   // todas las tareas Active únicas (deduplicadas) de la persona seleccionada, con espacio/carpeta resueltos
+let lastFetchStats = null; // {rawCount, uniqueCount, duplicatesRemoved} del último fetch — ver loadPersonTasks
 let isLoading = false;
 
 // ── WRIKE FETCH ──────────────────────────────────────────────────────────
@@ -214,21 +225,6 @@ async function paginateAll(fetchPage) {
     pages++;
   } while (nextPageToken && pages < 50);
   return items;
-}
-
-// Ejecuta fn(item) sobre items con un máximo de `limit` en vuelo a la vez —
-// evita saturar la API de Wrike al recorrer los 23 espacios secuencialmente.
-async function mapLimit(items, limit, fn) {
-  const results = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i], i);
-    }
-  }
-  await Promise.all(new Array(Math.min(limit, items.length)).fill(0).map(worker));
-  return results;
 }
 
 function escapeHtml(s) {
@@ -275,7 +271,7 @@ async function connect() {
 function forgetToken() {
   localStorage.removeItem(TOKEN_KEY);
   token = null;
-  spaces = []; contacts = []; folderCache = new Map();
+  spaces = []; spaceIdSet = new Set(); contacts = []; folderInfoCache = new Map(); allActiveTasks = [];
   document.getElementById('refreshBtn').style.display = 'none';
   document.getElementById('forgetBtn').style.display = 'none';
   document.getElementById('controls').style.display = 'none';
@@ -287,6 +283,7 @@ function forgetToken() {
 
 // ── SPRINT (martes → lunes) ─────────────────────────────────────────────
 const DOW_ES = ['dom','lun','mar','mié','jue','vie','sáb'];
+const DOW_ES_CAP = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 const MON_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 
 function ymd(d) {
@@ -330,23 +327,46 @@ function sprintFromTuesday(tue) {
   const end = new Date(start); end.setDate(start.getDate() + 6);
   return { start, end };
 }
+// "Sprint S34 — Mar 18/08 al Lun 24/08/2026"
 function sprintLabel(sprint) {
   const w = isoWeekNumber(sprint.start);
-  const dd = d => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
-  return 'S' + w + ' — ' + dd(sprint.start) + ' al ' + dd(sprint.end);
+  const dm = d => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+  const startTxt = DOW_ES_CAP[sprint.start.getDay()] + ' ' + dm(sprint.start);
+  const endTxt = DOW_ES_CAP[sprint.end.getDay()] + ' ' + dm(sprint.end) + '/' + sprint.end.getFullYear();
+  return 'Sprint S' + w + ' — ' + startTxt + ' al ' + endTxt;
+}
+function sprintWeekOf(offsetWeeks, base) {
+  const d = new Date(base.start);
+  d.setDate(d.getDate() + offsetWeeks * 7);
+  return isoWeekNumber(d);
+}
+
+function refreshSprintNavUI() {
+  document.getElementById('sprintBadge').textContent = sprintLabel(selectedSprint);
+  document.getElementById('sprintPrevBtn').textContent = '‹ S' + sprintWeekOf(-1, selectedSprint);
+  document.getElementById('sprintNextBtn').textContent = 'S' + sprintWeekOf(1, selectedSprint) + ' ›';
+  const curBtn = document.getElementById('sprintCurrentBtn');
+  curBtn.textContent = 'S' + isoWeekNumber(currentSprint.start) + ' actual';
+  curBtn.classList.toggle('current-btn', ymd(selectedSprint.start) === ymd(currentSprint.start));
 }
 
 function updateSprintBadge() {
   currentSprint = computeCurrentSprint();
   if (!selectedSprint) selectedSprint = currentSprint;
-  document.getElementById('sprintBadge').textContent = sprintLabel(selectedSprint);
+  refreshSprintNavUI();
 }
 
 function navigateSprint(deltaWeeks) {
   const newStart = new Date(selectedSprint.start);
   newStart.setDate(newStart.getDate() + deltaWeeks * 7);
   selectedSprint = sprintFromTuesday(newStart);
-  document.getElementById('sprintBadge').textContent = sprintLabel(selectedSprint);
+  refreshSprintNavUI();
+  renderFromCache();
+}
+
+function goToCurrentSprint() {
+  selectedSprint = currentSprint;
+  refreshSprintNavUI();
   renderFromCache();
 }
 
@@ -360,7 +380,7 @@ function jumpToSprint() {
   const year = currentSprint.start.getFullYear();
   selectedSprint = sprintFromTuesday(tuesdayOfIsoWeek(w, year));
   input.value = '';
-  document.getElementById('sprintBadge').textContent = sprintLabel(selectedSprint);
+  refreshSprintNavUI();
   renderFromCache();
 }
 
@@ -394,40 +414,75 @@ async function loadSpaces() {
   return (r.data || []).map(s => ({ id: s.id, title: s.title }));
 }
 
-// ── FOLDER NAME RESOLUTION (cache) ─────────────────────────────────────
-async function resolveFoldersBatch(ids) {
-  const toFetch = [...new Set(ids)].filter(id => id && !folderCache.has(id));
+// ── RESOLUCIÓN DE ESPACIO/CARPETA (cache) ──────────────────────────────────
+// task.spaceId viene vacío en la práctica (confirmado: 62/62 tareas reales
+// revisadas) — no sirve para agrupar. En cambio se sube por parentIds hasta
+// encontrar un id que sea un espacio conocido (ver spaceIdSet), cacheando
+// cada folder ({title, parentIds}) para no repetir llamadas.
+async function resolveFoldersInfoBatch(ids) {
+  const toFetch = [...new Set(ids)].filter(id => id && !folderInfoCache.has(id));
   for (let i = 0; i < toFetch.length; i += 100) {
     const chunk = toFetch.slice(i, i + 100);
     try {
       const r = await wrike('/folders/' + chunk.join(','));
-      (r.data || []).forEach(f => folderCache.set(f.id, f.title));
-    } catch (e) { console.warn('resolveFoldersBatch falló para', chunk, e); }
-    chunk.forEach(id => { if (!folderCache.has(id)) folderCache.set(id, null); });
+      (r.data || []).forEach(f => folderInfoCache.set(f.id, { title: f.title, parentIds: f.parentIds || [] }));
+    } catch (e) { console.warn('resolveFoldersInfoBatch falló para', chunk, e); }
+    chunk.forEach(id => { if (!folderInfoCache.has(id)) folderInfoCache.set(id, null); });
   }
 }
 
-// ── TASKS PER SPACE ──────────────────────────────────────────────────────
-// Sin filtro de fecha a nivel API: la mayoría de las tareas activas son tipo
-// "Backlog" (sin start/due) o tienen fechas viejas — filtrar por startDate/
-// dueDate en la request dejaba la búsqueda vacía en la práctica. Ahora se
-// trae TODO lo asignado a la persona (cualquier status) y se filtra/agrupa
-// por sprint del lado del cliente (ver splitBySprintClientSide).
-async function fetchSpaceTasks(spaceId, contactId) {
+// Sube la cadena de parentIds nivel por nivel (BFS acotado a 6 niveles),
+// resolviendo cada nivel en batch, hasta que ya no queden folders nuevos por
+// resolver — deja folderInfoCache listo para que resolveTaskSpaceAndFolder
+// (síncrona) pueda recorrer la cadena de cada tarea sin más llamadas a Wrike.
+async function resolveSpaceChains(tasks) {
+  let frontier = [...new Set(tasks.map(t => t.parentIds && t.parentIds[0]).filter(Boolean))];
+  for (let depth = 0; depth < 6 && frontier.length; depth++) {
+    await resolveFoldersInfoBatch(frontier);
+    const next = new Set();
+    frontier.forEach(id => {
+      if (spaceIdSet.has(id)) return; // ya es un espacio, no hace falta subir más
+      const info = folderInfoCache.get(id);
+      if (info && info.parentIds) info.parentIds.forEach(pid => { if (pid && !folderInfoCache.has(pid)) next.add(pid); });
+    });
+    frontier = [...next];
+  }
+}
+
+function resolveTaskSpaceAndFolder(task) {
+  const directParent = task.parentIds && task.parentIds[0];
+  const info0 = directParent ? folderInfoCache.get(directParent) : null;
+  const folderTitle = info0 ? info0.title : null;
+  let cur = directParent, depth = 0;
+  while (cur && depth < 6) {
+    if (spaceIdSet.has(cur)) {
+      const sp = spaces.find(s => s.id === cur);
+      return { spaceTitle: sp ? sp.title : cur, folderTitle };
+    }
+    const info = folderInfoCache.get(cur);
+    if (!info || !info.parentIds || !info.parentIds.length) break;
+    cur = info.parentIds[0];
+    depth++;
+  }
+  return { spaceTitle: 'Otro / no identificado', folderTitle };
+}
+
+// ── TODAS LAS TAREAS DE LA PERSONA (endpoint global, sin scope) ───────────
+// Iterar espacio por espacio (/spaces/{id}/tasks) se probó y se descartó:
+// verificado contra datos reales que pierde tareas activas genuinas cuando
+// una carpeta es descendiente de más de un espacio (confirmado: 53 de 62
+// tareas reales, un 14.5% perdido). El endpoint global /tasks sin scope,
+// filtrado por responsibles, sí trae el universo completo — confirmado
+// contra la misma cuenta real (62/62, estable en dos corridas).
+async function fetchAllTasksForContact(contactId) {
   return paginateAll((nextPageToken) => {
     const params = {
-      // Sin descendants+subTasks, /spaces/{id}/tasks solo devuelve tareas
-      // colgadas directamente del space-root — nunca las de dentro de
-      // carpetas/proyectos, que es donde vive prácticamente todo (confirmado
-      // contra la API real: un espacio con miles de tareas devolvía solo 4).
-      descendants: true,
-      subTasks: true,
       fields: TASK_FIELDS,
       responsibles: [contactId],
       pageSize: 1000
     };
     if (nextPageToken) params.nextPageToken = nextPageToken;
-    return wrike('/spaces/' + spaceId + '/tasks', params);
+    return wrike('/tasks', params);
   });
 }
 
@@ -482,24 +537,25 @@ async function loadPersonTasks(contactId) {
   document.getElementById('summary').style.display = 'none';
   document.getElementById('content').innerHTML = '';
   document.getElementById('exportBtn').style.display = 'none';
-  let done = 0;
-  showLoading(`Cargando tareas en ${spaces.length} espacios… (0/${spaces.length})`);
+  showLoading('Cargando tareas…');
   try {
-    const perSpace = await mapLimit(spaces, 5, async (space) => {
-      let tasks = [];
-      try {
-        tasks = await fetchSpaceTasks(space.id, contactId);
-      } catch (e) {
-        console.warn('Error cargando tareas de espacio', space.title, e);
-      }
-      done++;
-      showLoading(`Cargando tareas en ${spaces.length} espacios… (${done}/${spaces.length})`);
-      return tasks.map(t => ({ task: t, spaceTitle: space.title, spaceId: space.id }));
+    const raw = await fetchAllTasksForContact(contactId);
+    const activeOnly = raw.filter(t => t.status === 'Active');
+    // Dedup por task.id: la misma tarea puede volver más de una vez entre
+    // páginas de una misma consulta. Se queda con la primera ocurrencia.
+    const taskMap = new Map();
+    activeOnly.forEach(t => { if (!taskMap.has(t.id)) taskMap.set(t.id, t); });
+    const deduped = Array.from(taskMap.values());
+    lastFetchStats = { rawCount: activeOnly.length, uniqueCount: deduped.length, duplicatesRemoved: activeOnly.length - deduped.length };
+    console.log(`[Sprint Tracking] Tareas Active traídas: ${activeOnly.length} crudas → ${deduped.length} únicas (${lastFetchStats.duplicatesRemoved} duplicadas eliminadas)`);
+
+    showLoading('Resolviendo espacios y carpetas…');
+    await resolveSpaceChains(deduped);
+    allActiveTasks = deduped.map(t => {
+      const { spaceTitle, folderTitle } = resolveTaskSpaceAndFolder(t);
+      return { task: t, spaceTitle, folderTitle };
     });
-    const all = perSpace.flat().filter(x => x.task.status === 'Active');
-    const parentIds = all.map(x => x.task.parentIds && x.task.parentIds[0]).filter(Boolean);
-    await resolveFoldersBatch(parentIds);
-    allActiveTasks = all;
+
     document.getElementById('exportBtn').style.display = 'inline-flex';
     renderFromCache();
   } catch (e) {
@@ -590,61 +646,66 @@ function renderSummary(sprintTasks, overdue, backlog) {
     </div>`;
 }
 
-function taskCardHtml(x, sectionType) {
+function taskTableRow(x, i, sectionType) {
   const t = x.task;
-  const parentId = t.parentIds && t.parentIds[0];
-  const folderTitle = parentId ? folderCache.get(parentId) : null;
-  const path = x.spaceTitle + (folderTitle ? ' &gt; ' + escapeHtml(folderTitle) : '');
-  const hrs = effortHours(t).toFixed(1);
+  const folderTitle = x.folderTitle || '—';
+  const hrs = effortHours(t).toFixed(1) + ' hrs';
   const statusCls = STATUS_CLASS[t.status] || 'badge-deferred';
   const statusLbl = STATUS_LABEL[t.status] || t.status || '—';
-  const extraBadge = sectionType === 'backlog' ? '<span class="badge badge-backlog">Backlog</span>'
-    : sectionType === 'overdue' ? '<span class="badge badge-vencida">Vencida</span>'
-    : (inSprintRange(taskDueYmd(t), currentSprint) ? '<span class="badge badge-sprint-actual">Sprint actual</span>' : '');
-  const datesLine = sectionType === 'backlog' ? 'Sin fecha' : (fmtTaskDate(taskStartYmd(t)) + ' → ' + fmtTaskDate(taskDueYmd(t)));
-  return `
-    <div class="task-card">
-      <div class="task-title">${escapeHtml(t.title || '(sin título)')}</div>
-      <div class="task-path">${path}</div>
-      <div class="task-row">
-        <span class="badge ${statusCls}">${escapeHtml(statusLbl)}</span>
-        ${extraBadge}
-        <span class="task-effort">${hrs} hrs</span>
-      </div>
-      <div class="task-dates">${datesLine}</div>
-    </div>`;
+  const titleHtml = t.permalink
+    ? `<a class="task-link" href="${escapeHtml(t.permalink)}" target="_blank" rel="noopener">${escapeHtml(t.title || '(sin título)')}</a>`
+    : `<span class="task-title-plain">${escapeHtml(t.title || '(sin título)')}</span>`;
+  let dueCell;
+  if (sectionType === 'backlog') {
+    dueCell = '<span class="col-due backlog-tag">Backlog</span>';
+  } else {
+    const due = taskDueYmd(t);
+    const cls = sectionType === 'overdue' ? 'col-due overdue' : 'col-due';
+    dueCell = `<span class="${cls}">${fmtTaskDate(due)}</span>`;
+  }
+  return `<tr>
+    <td class="col-num">${i + 1}</td>
+    <td>${titleHtml}</td>
+    <td>${escapeHtml(x.spaceTitle)}</td>
+    <td>${escapeHtml(folderTitle)}</td>
+    <td class="col-effort">${hrs}</td>
+    <td><span class="badge ${statusCls}">${escapeHtml(statusLbl)}</span></td>
+    <td>${dueCell}</td>
+  </tr>`;
 }
 
-function groupBySpaceHtml(entries, sectionType) {
-  const bySpace = new Map();
-  entries.forEach(x => {
-    if (!bySpace.has(x.spaceTitle)) bySpace.set(x.spaceTitle, []);
-    bySpace.get(x.spaceTitle).push(x);
+function taskTableHtml(entries, sectionType) {
+  const sorted = [...entries].sort((a, b) => {
+    if (sectionType === 'backlog') {
+      return a.spaceTitle.localeCompare(b.spaceTitle, 'es') || (a.task.title || '').localeCompare(b.task.title || '', 'es');
+    }
+    return (taskDueYmd(a.task) || '').localeCompare(taskDueYmd(b.task) || '');
   });
-  const spaceNames = [...bySpace.keys()].sort((a, b) => a.localeCompare(b, 'es'));
-  return spaceNames.map(spaceName => {
-    const items = bySpace.get(spaceName);
-    const cards = items.map(x => taskCardHtml(x, sectionType)).join('');
-    return `
-      <div class="space-group ${sectionType === 'backlog' ? 'backlog-group' : ''}">
-        <div class="space-hdr">
-          <span class="name">${escapeHtml(spaceName)}</span>
-          <span class="count">${items.length} tarea${items.length === 1 ? '' : 's'}</span>
-        </div>
-        <div class="task-grid">${cards}</div>
-      </div>`;
-  }).join('');
+  const rows = sorted.map((x, i) => taskTableRow(x, i, sectionType)).join('');
+  return `
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table class="task-table">
+          <thead><tr>
+            <th>#</th><th>Tarea</th><th>Espacio</th><th>Carpeta / Proyecto</th>
+            <th>Esfuerzo</th><th>Estado</th><th>Fecha término</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function renderTaskSections(sprintTasks, overdue, backlog) {
   const content = document.getElementById('content');
+  const sprintTitle = sprintLabel(selectedSprint).replace('Sprint ', '');
   let html = '';
-  html += `<div class="section-title">Sprint ${escapeHtml('S' + isoWeekNumber(selectedSprint.start))} <span class="n">${sprintTasks.length}</span></div>`;
-  html += sprintTasks.length ? groupBySpaceHtml(sprintTasks, 'sprint') : '<div class="state">Sin tareas con fecha en este sprint.</div>';
+  html += `<div class="section-title">Sprint ${escapeHtml(sprintTitle)} <span class="n">${sprintTasks.length}</span></div>`;
+  html += sprintTasks.length ? taskTableHtml(sprintTasks, 'sprint') : '<div class="state">Sin tareas con fecha en este sprint.</div>';
   html += `<div class="section-title">⚠ Vencidas <span class="n">${overdue.length}</span></div>`;
-  html += overdue.length ? groupBySpaceHtml(overdue, 'overdue') : '<div class="state">Sin tareas vencidas.</div>';
-  html += `<div class="section-title">📋 Sin fecha / Backlog <span class="n">${backlog.length}</span></div>`;
-  html += backlog.length ? groupBySpaceHtml(backlog, 'backlog') : '<div class="state">Sin tareas backlog.</div>';
+  html += overdue.length ? taskTableHtml(overdue, 'overdue') : '<div class="state">Sin tareas vencidas.</div>';
+  html += `<div class="section-title">📋 Backlog / Sin fecha <span class="n">${backlog.length}</span></div>`;
+  html += backlog.length ? taskTableHtml(backlog, 'backlog') : '<div class="state">Sin tareas backlog.</div>';
   content.innerHTML = html;
 }
 
@@ -664,8 +725,7 @@ function exportExcel() {
   function pushRows(list, sprintCol) {
     list.forEach(x => {
       const t = x.task;
-      const parentId = t.parentIds && t.parentIds[0];
-      const folderTitle = parentId ? (folderCache.get(parentId) || '') : '';
+      const folderTitle = x.folderTitle || '';
       rows.push({
         'Sprint': sprintCol,
         'Persona': personName,
@@ -706,6 +766,7 @@ async function bootstrap() {
     const [contactList, spaceList] = await Promise.all([loadContacts(), loadSpaces()]);
     contacts = contactList;
     spaces = spaceList;
+    spaceIdSet = new Set(spaces.map(s => s.id));
     renderPersonSelect();
     status.textContent = `✔ ${contacts.length} personas · ${spaces.length} espacios`;
     status.className = 'conn-status ok';
