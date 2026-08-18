@@ -147,7 +147,10 @@ const EXCLUDED_EMAILS = new Set([
   'grace.porras+welearn@consulting.wrike.com'
 ]);
 
-const TASK_FIELDS = ['effortAllocation', 'responsibleIds', 'status', 'parentIds', 'spaceId', 'superTaskIds'];
+// 'status' y 'dates' NO van en fields — Wrike los devuelve siempre por defecto,
+// y pedirlos explícitamente en el array `fields` causa HTTP 400 (confirmado
+// contra la API real: ver commit que corrigió este bug).
+const TASK_FIELDS = ['effortAllocation', 'responsibleIds', 'parentIds', 'spaceId', 'superTaskIds'];
 
 let spaces = [];         // [{id,title}]
 let contacts = [];       // personas activas filtradas
@@ -323,9 +326,17 @@ async function fetchSpaceTasks(spaceId, contactId) {
   const dueStr = ymd(currentSprint.end);
   return paginateAll((nextPageToken) => {
     const params = {
+      // Sin descendants+subTasks, /spaces/{id}/tasks solo devuelve tareas
+      // colgadas directamente del space-root — nunca las de dentro de
+      // carpetas/proyectos, que es donde vive prácticamente todo (confirmado
+      // contra la API real: un espacio con miles de tareas devolvía solo 4).
+      descendants: true,
+      subTasks: true,
       fields: TASK_FIELDS,
-      startDate: { start: startStr, end: startStr },
-      dueDate: { start: dueStr, end: dueStr },
+      // Un rango con start==end (un solo día) devuelve HTTP 400 — para
+      // filtrar por fecha exacta hay que usar {equal:"YYYY-MM-DD"}.
+      startDate: { equal: startStr },
+      dueDate: { equal: dueStr },
       responsibles: [contactId],
       pageSize: 1000
     };
