@@ -1523,12 +1523,28 @@ function renderPersonJefCard(contact, tasks, activeHours, completedHours, staffI
     </tr>`;
   }).join('');
 
+  const hourColor = loadLabel === 'Alerta' ? 'var(--red)'
+    : loadLabel === 'Margen' ? '#d97706'
+    : loadLabel === 'Dentro' ? '#276749'
+    : loadLabel === 'Variable' ? 'var(--navy)'
+    : loadClass === 'jef-load-red' ? 'var(--red)'
+    : loadClass === 'jef-load-amber' ? '#d97706'
+    : loadClass === 'jef-load-green' ? '#276749'
+    : 'var(--navy)';
+
   return `<div class="jef-person-card">
     <div class="jef-person-hdr" onclick="toggleSubgroup('${bodyId}')">
       <span class="section-toggle-icon" id="${bodyId}-arrow">▶</span>
       <span class="jef-person-name">${escapeHtml(fullName(contact))}</span>
       ${contratoBadge}
-      <span class="jef-hours">${activeHours.toFixed(1)}h activas · ${completedHours.toFixed(1)}h completadas</span>
+      <div style="display:flex;flex-direction:column;align-items:flex-start;line-height:1;margin:0 4px">
+        <div style="display:flex;align-items:baseline;gap:3px">
+          <span style="font-size:2.2rem;font-weight:800;line-height:1;color:${hourColor}">${activeHours.toFixed(1)}</span>
+          <span style="font-size:1rem;font-weight:600;color:var(--muted)">h</span>
+        </div>
+        <span style="font-size:10px;color:var(--muted);margin-top:1px">horas activas</span>
+      </div>
+      <span class="jef-hours">${completedHours.toFixed(1)}h completadas</span>
       <span class="jef-load-dot">${loadEmoji}</span>
       <span class="jef-load-label ${loadClass}">${loadLabel}</span>
       <span class="n">${tasks.length}</span>
