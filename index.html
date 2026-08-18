@@ -180,6 +180,21 @@ async function paginateAll(fetchPage) {
   return items;
 }
 
+// Ejecuta fn(item) sobre items con un máximo de `limit` en vuelo a la vez —
+// evita saturar la API de Wrike al recorrer los 23 espacios secuencialmente.
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(new Array(Math.min(limit, items.length)).fill(0).map(worker));
+  return results;
+}
+
 function escapeHtml(s) {
   if (s == null) return '';
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -364,17 +379,21 @@ async function loadSprintTasks(contactId) {
   isLoading = true;
   document.getElementById('summary').style.display = 'none';
   document.getElementById('content').innerHTML = '';
-  showLoading('Cargando tareas del sprint en ' + spaces.length + ' espacios…');
+  let done = 0;
+  showLoading(`Cargando tareas del sprint en ${spaces.length} espacios… (0/${spaces.length})`);
   try {
-    const allTasks = [];
-    for (const space of spaces) {
+    const perSpace = await mapLimit(spaces, 5, async (space) => {
+      let tasks = [];
       try {
-        const tasks = await fetchSpaceTasks(space.id, contactId);
-        tasks.forEach(t => allTasks.push({ task: t, spaceTitle: space.title, spaceId: space.id }));
+        tasks = await fetchSpaceTasks(space.id, contactId);
       } catch (e) {
         console.warn('Error cargando tareas de espacio', space.title, e);
       }
-    }
+      done++;
+      showLoading(`Cargando tareas del sprint en ${spaces.length} espacios… (${done}/${spaces.length})`);
+      return tasks.map(t => ({ task: t, spaceTitle: space.title, spaceId: space.id }));
+    });
+    const allTasks = perSpace.flat();
     const parentIds = allTasks.map(x => x.task.parentIds && x.task.parentIds[0]).filter(Boolean);
     await resolveFoldersBatch(parentIds);
     renderTasks(allTasks);
