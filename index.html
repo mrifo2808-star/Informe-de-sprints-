@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WeLearn Innovatia — Seguimiento de Sprints</title>
+<style>
+  :root{
+    --navy:#0f2a4a; --navy2:#16345c; --blue:#2b6cb0; --celeste:#4299e1; --celestebg:#ebf8ff;
+    --border:#cbd5e0; --text:#1a202c; --muted:#718096; --bg:#f4f7fb; --card:#ffffff;
+    --green:#2f855a; --greenbg:#e6f6ee; --red:#c53030; --redbg:#fdecec;
+    --gray:#718096; --graybg:#eef1f5; --amber:#b9810d; --amberbg:#fff6e5;
+    --radius:8px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.4}
+  .wrap{max-width:1240px;margin:0 auto;padding:16px}
+
+  .hdr{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border-radius:var(--radius);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;box-shadow:0 2px 8px rgba(15,42,74,.25)}
+  .hdr-title{display:flex;align-items:center;gap:12px}
+  .hdr-logo{width:38px;height:38px;border-radius:8px;background:var(--celeste);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0}
+  .hdr h1{font-size:17px;margin:0;font-weight:800;letter-spacing:.2px}
+  .hdr-sub{font-size:11.5px;color:#bcd7f0;text-transform:uppercase;letter-spacing:.6px}
+  .hdr-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .sprint-badge{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+  .hbtn{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .hbtn:hover{background:rgba(255,255,255,.22)}
+
+  .controls{margin-top:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .controls label{font-size:12px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.4px}
+  .controls select{flex:1;min-width:220px;max-width:360px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13.5px;color:var(--text);background:#fff}
+  .conn-status{margin-left:auto;font-size:12px;color:var(--muted)}
+  .conn-status.ok{color:var(--green);font-weight:600}
+
+  .summary{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+  .kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+  .kpi .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+  .kpi .val{font-size:24px;font-weight:800;color:var(--navy);margin-top:4px}
+  .kpi .sub{font-size:11px;color:var(--muted);margin-top:2px}
+  .kpi.accent{border-left:4px solid var(--celeste)}
+  .kpi.accent-green{border-left:4px solid var(--green)}
+
+  .loading{margin-top:40px;display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--muted);font-size:13px}
+  .spin{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--celeste);border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .state{margin-top:40px;text-align:center;color:var(--muted);font-size:13.5px;padding:30px}
+
+  .space-group{margin-top:20px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .space-hdr{background:var(--navy);color:#fff;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .space-hdr .name{font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+  .space-hdr .count{font-size:11.5px;background:rgba(255,255,255,.16);padding:3px 10px;border-radius:999px}
+  .task-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:14px}
+
+  .task-card{border:1px solid var(--border);border-radius:7px;padding:12px;background:#fbfcfe;display:flex;flex-direction:column;gap:7px}
+  .task-title{font-size:13px;font-weight:700;color:var(--text);line-height:1.35}
+  .task-path{font-size:11px;color:var(--muted)}
+  .task-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px}
+  .task-effort{font-weight:700;color:var(--navy)}
+  .badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  .badge-active{background:var(--celestebg);color:var(--blue)}
+  .badge-completed{background:var(--greenbg);color:var(--green)}
+  .badge-deferred{background:var(--graybg);color:var(--gray)}
+  .badge-cancelled{background:var(--redbg);color:var(--red)}
+  .task-dates{font-size:11px;color:var(--muted)}
+
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(15,42,74,.55);align-items:center;justify-content:center;z-index:50;padding:16px}
+  .modal-bg.show{display:flex}
+  .modal{background:#fff;border-radius:var(--radius);width:100%;max-width:420px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+  .modal-hdr{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;padding:14px 18px;font-weight:700;font-size:14px}
+  .modal-body{padding:18px}
+  .token-note{font-size:11.5px;color:var(--muted);line-height:1.6;margin:0 0 12px;background:#f8fafc;padding:10px 12px;border-radius:6px;border-left:3px solid var(--celeste)}
+  .token-input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:13.5px;margin-bottom:10px}
+  .modal-status{min-height:18px;font-size:12px;margin-bottom:10px}
+  .modal-status.err{color:var(--red)}
+  .modal-status.ok{color:var(--green)}
+  .btn{width:100%;padding:10px;border-radius:6px;border:1px solid var(--celeste);background:var(--celeste);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer}
+  .btn:hover{background:#3182ce}
+
+  @media (max-width:600px){
+    .hdr{flex-direction:column;align-items:flex-start}
+    .controls{flex-direction:column;align-items:stretch}
+    .conn-status{margin-left:0}
+    .controls select{max-width:none}
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hdr">
+      <div class="hdr-title">
+        <div class="hdr-logo">WI</div>
+        <div>
+          <h1>WeLearn Innovatia</h1>
+          <div class="hdr-sub">Seguimiento de Sprints</div>
+        </div>
+      </div>
+      <div class="hdr-actions">
+        <span id="sprintBadge" class="sprint-badge">Sprint: —</span>
+        <button id="refreshBtn" class="hbtn" onclick="refreshAll()" style="display:none">🔄 Actualizar</button>
+        <button id="forgetBtn" class="hbtn" onclick="forgetToken()" style="display:none">Cerrar sesión</button>
+      </div>
+    </header>
+
+    <div id="controls" class="controls" style="display:none">
+      <label for="personSel">Persona</label>
+      <select id="personSel" onchange="onPersonChange()">
+        <option value="">Selecciona una persona…</option>
+      </select>
+      <span id="connStatus" class="conn-status"></span>
+    </div>
+
+    <div id="summary" class="summary" style="display:none"></div>
+
+    <div id="loading" class="loading" style="display:none">
+      <div class="spin"></div>
+      <div id="loadingText">Cargando…</div>
+    </div>
+
+    <div id="content"></div>
+  </div>
+
+  <div class="modal-bg" id="authGate">
+    <div class="modal">
+      <div class="modal-hdr">🔑 Conectar con Wrike</div>
+      <div class="modal-body">
+        <p class="token-note">Ingresa tu token permanente de Wrike (Configuración → Apps &amp; Integraciones → API) para ver el seguimiento de sprints. El token se guarda solo en este navegador.</p>
+        <input type="password" id="tokenInput" class="token-input" placeholder="Pega tu token aquí…" autocomplete="off" spellcheck="false">
+        <div id="gateStatus" class="modal-status"></div>
+        <button class="btn" onclick="connect()">Conectar</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// WeLearn Innovatia — Seguimiento de Sprints
+// Regla de negocio: SOLO effortAllocation (esfuerzo planificado). Nunca
+// timelogs/timeSpent. Las "HH reales" = effortAllocation de tareas Completed.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TOKEN_KEY = 'wrike_token';
+let token = localStorage.getItem(TOKEN_KEY) || null;
+
+const EXCLUDED_EMAILS = new Set([
+  'colaborador@welearn.cl',
+  'grace.porras+welearn@consulting.wrike.com'
+]);
+
+const TASK_FIELDS = ['effortAllocation', 'responsibleIds', 'status', 'parentIds', 'spaceId', 'superTaskIds'];
+
+let spaces = [];         // [{id,title}]
+let contacts = [];       // personas activas filtradas
+let folderCache = new Map(); // folderId -> title|null
+let currentSprint = null;
+let isLoading = false;
+
+// ── WRIKE FETCH ──────────────────────────────────────────────────────────
+async function wrike(path, params = {}) {
+  const url = new URL('https://www.wrike.com/api/v4' + path);
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === undefined || v === null) return;
+    url.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
+  });
+  const r = await fetch(url.toString(), { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+async function paginateAll(fetchPage) {
+  let items = [];
+  let nextPageToken = null;
+  let pages = 0;
+  do {
+    const r = await fetchPage(nextPageToken);
+    items = items.concat(r.data || []);
+    nextPageToken = r.nextPageToken || null;
+    pages++;
+  } while (nextPageToken && pages < 50);
+  return items;
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+// ── AUTH GATE ────────────────────────────────────────────────────────────
+function showGate() { document.getElementById('authGate').classList.add('show'); }
+function hideGate() { document.getElementById('authGate').classList.remove('show'); }
+
+function setGateStatus(msg, cls) {
+  const el = document.getElementById('gateStatus');
+  el.textContent = msg;
+  el.className = 'modal-status ' + (cls || '');
+}
+
+function wrikeErrorMessage(e) {
+  if (e.message.includes('401')) return 'Token inválido.';
+  if (e.message.includes('Failed to fetch')) return 'No se pudo conectar con Wrike — revisa tu conexión a internet.';
+  return e.message;
+}
+
+async function connect() {
+  const t = document.getElementById('tokenInput').value.trim();
+  if (!t) { setGateStatus('Ingresa un token antes de conectar.', 'err'); return; }
+  token = t;
+  setGateStatus('⏳ Verificando…', '');
+  try {
+    const me = await wrike('/contacts', { me: true });
+    const c = me.data && me.data[0];
+    const name = c ? (c.firstName + ' ' + c.lastName) : 'Conectado';
+    localStorage.setItem(TOKEN_KEY, token);
+    document.getElementById('tokenInput').value = '';
+    setGateStatus('✔ ' + name, 'ok');
+    hideGate();
+    await bootstrap();
+  } catch (e) {
+    token = null;
+    setGateStatus('✖ ' + wrikeErrorMessage(e), 'err');
+  }
+}
+
+function forgetToken() {
+  localStorage.removeItem(TOKEN_KEY);
+  token = null;
+  spaces = []; contacts = []; folderCache = new Map();
+  document.getElementById('refreshBtn').style.display = 'none';
+  document.getElementById('forgetBtn').style.display = 'none';
+  document.getElementById('controls').style.display = 'none';
+  document.getElementById('summary').style.display = 'none';
+  document.getElementById('content').innerHTML = '';
+  document.getElementById('connStatus').textContent = '';
+  showGate();
+}
+
+// ── SPRINT (martes → lunes) ─────────────────────────────────────────────
+const DOW_ES = ['dom','lun','mar','mié','jue','vie','sáb'];
+const MON_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+
+function ymd(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function fmtSprintDate(d) {
+  return DOW_ES[d.getDay()] + ' ' + d.getDate() + ' ' + MON_ES[d.getMonth()];
+}
+// Sprint actual: martes más reciente (<= hoy) hasta el lunes siguiente (6 días después)
+function computeCurrentSprint(now = new Date()) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dow = today.getDay(); // 0=Dom..6=Sáb
+  const diffToTuesday = (dow - 2 + 7) % 7; // días desde el último martes
+  const start = new Date(today); start.setDate(today.getDate() - diffToTuesday);
+  const end = new Date(start); end.setDate(start.getDate() + 6);
+  return { start, end };
+}
+function updateSprintBadge() {
+  currentSprint = computeCurrentSprint();
+  document.getElementById('sprintBadge').textContent =
+    'Sprint: ' + fmtSprintDate(currentSprint.start) + ' → ' + fmtSprintDate(currentSprint.end) + ' ' + currentSprint.end.getFullYear();
+}
+
+// ── CONTACTS ─────────────────────────────────────────────────────────────
+function fullName(c) { return ((c.firstName || '') + ' ' + (c.lastName || '')).trim() || c.id; }
+
+async function loadContacts() {
+  const r = await wrike('/contacts');
+  const list = (r.data || []).filter(c => {
+    if (c.type !== 'Person') return false;
+    if (c.deleted) return false;
+    const emails = (c.profiles || []).map(p => (p.email || '').toLowerCase());
+    if (emails.some(e => EXCLUDED_EMAILS.has(e))) return false;
+    return true;
+  });
+  list.sort((a, b) => fullName(a).localeCompare(fullName(b), 'es'));
+  return list;
+}
+
+function renderPersonSelect() {
+  const sel = document.getElementById('personSel');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Selecciona una persona…</option>' +
+    contacts.map(c => `<option value="${c.id}">${escapeHtml(fullName(c))}</option>`).join('');
+  if (cur) sel.value = cur;
+}
+
+// ── SPACES ───────────────────────────────────────────────────────────────
+async function loadSpaces() {
+  const r = await wrike('/spaces');
+  return (r.data || []).map(s => ({ id: s.id, title: s.title }));
+}
+
+// ── FOLDER NAME RESOLUTION (cache) ─────────────────────────────────────
+async function resolveFoldersBatch(ids) {
+  const toFetch = [...new Set(ids)].filter(id => id && !folderCache.has(id));
+  for (let i = 0; i < toFetch.length; i += 100) {
+    const chunk = toFetch.slice(i, i + 100);
+    try {
+      const r = await wrike('/folders/' + chunk.join(','));
+      (r.data || []).forEach(f => folderCache.set(f.id, f.title));
+    } catch (e) { console.warn('resolveFoldersBatch falló para', chunk, e); }
+    chunk.forEach(id => { if (!folderCache.has(id)) folderCache.set(id, null); });
+  }
+}
+
+// ── TASKS PER SPACE ──────────────────────────────────────────────────────
+async function fetchSpaceTasks(spaceId, contactId) {
+  const startStr = ymd(currentSprint.start);
+  const dueStr = ymd(currentSprint.end);
+  return paginateAll((nextPageToken) => {
+    const params = {
+      fields: TASK_FIELDS,
+      startDate: { start: startStr, end: startStr },
+      dueDate: { start: dueStr, end: dueStr },
+      responsibles: [contactId],
+      pageSize: 1000
+    };
+    if (nextPageToken) params.nextPageToken = nextPageToken;
+    return wrike('/spaces/' + spaceId + '/tasks', params);
+  });
+}
+
+function effortHours(task) {
+  const min = task.effortAllocation && typeof task.effortAllocation.totalEffort === 'number'
+    ? task.effortAllocation.totalEffort : 0;
+  return min / 60;
+}
+
+const STATUS_LABEL = { Active: 'Activa', Completed: 'Completada', Deferred: 'Diferida', Cancelled: 'Cancelada' };
+const STATUS_CLASS = { Active: 'badge-active', Completed: 'badge-completed', Deferred: 'badge-deferred', Cancelled: 'badge-cancelled' };
+
+function fmtTaskDate(s) {
+  if (!s) return '—';
+  const d = new Date(s.slice(0, 10) + 'T00:00:00');
+  return d.getDate() + ' ' + MON_ES[d.getMonth()];
+}
+
+// ── LOAD & RENDER ─────────────────────────────────────────────────────────
+function showLoading(msg) {
+  const l = document.getElementById('loading');
+  if (msg) { l.style.display = 'flex'; document.getElementById('loadingText').textContent = msg; }
+  else l.style.display = 'none';
+}
+
+async function onPersonChange() {
+  const sel = document.getElementById('personSel');
+  const contactId = sel.value;
+  if (!contactId) {
+    document.getElementById('summary').style.display = 'none';
+    document.getElementById('content').innerHTML = '';
+    return;
+  }
+  await loadSprintTasks(contactId);
+}
+
+async function refreshAll() {
+  if (isLoading) return;
+  updateSprintBadge();
+  const sel = document.getElementById('personSel');
+  if (sel.value) await loadSprintTasks(sel.value);
+}
+
+async function loadSprintTasks(contactId) {
+  if (isLoading) return;
+  isLoading = true;
+  document.getElementById('summary').style.display = 'none';
+  document.getElementById('content').innerHTML = '';
+  showLoading('Cargando tareas del sprint en ' + spaces.length + ' espacios…');
+  try {
+    const allTasks = [];
+    for (const space of spaces) {
+      try {
+        const tasks = await fetchSpaceTasks(space.id, contactId);
+        tasks.forEach(t => allTasks.push({ task: t, spaceTitle: space.title, spaceId: space.id }));
+      } catch (e) {
+        console.warn('Error cargando tareas de espacio', space.title, e);
+      }
+    }
+    const parentIds = allTasks.map(x => x.task.parentIds && x.task.parentIds[0]).filter(Boolean);
+    await resolveFoldersBatch(parentIds);
+    renderTasks(allTasks);
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="state">✖ Error cargando tareas: ${escapeHtml(wrikeErrorMessage(e))}</div>`;
+  } finally {
+    isLoading = false;
+    showLoading(false);
+  }
+}
+
+function renderTasks(entries) {
+  const totalTasks = entries.length;
+  const totalHours = entries.reduce((sum, x) => sum + effortHours(x.task), 0);
+  const completedHours = entries.filter(x => x.task.status === 'Completed').reduce((sum, x) => sum + effortHours(x.task), 0);
+  const completedCount = entries.filter(x => x.task.status === 'Completed').length;
+
+  const summaryEl = document.getElementById('summary');
+  summaryEl.style.display = 'grid';
+  summaryEl.innerHTML = `
+    <div class="kpi accent">
+      <div class="label">Tareas del Sprint</div>
+      <div class="val">${totalTasks}</div>
+      <div class="sub">asignadas a esta persona</div>
+    </div>
+    <div class="kpi accent">
+      <div class="label">Horas del Sprint</div>
+      <div class="val">${totalHours.toFixed(1)}</div>
+      <div class="sub">effortAllocation total</div>
+    </div>
+    <div class="kpi accent-green">
+      <div class="label">HH Reales (Completadas)</div>
+      <div class="val">${completedHours.toFixed(1)}</div>
+      <div class="sub">${completedCount} tarea${completedCount === 1 ? '' : 's'} completada${completedCount === 1 ? '' : 's'}</div>
+    </div>`;
+
+  const content = document.getElementById('content');
+  if (totalTasks === 0) {
+    content.innerHTML = '<div class="state">No hay tareas del sprint actual asignadas a esta persona en ningún espacio.</div>';
+    return;
+  }
+
+  const bySpace = new Map();
+  entries.forEach(x => {
+    if (!bySpace.has(x.spaceTitle)) bySpace.set(x.spaceTitle, []);
+    bySpace.get(x.spaceTitle).push(x);
+  });
+
+  const spaceNames = [...bySpace.keys()].sort((a, b) => a.localeCompare(b, 'es'));
+  content.innerHTML = spaceNames.map(spaceName => {
+    const items = bySpace.get(spaceName);
+    const cards = items.map(x => {
+      const t = x.task;
+      const parentId = t.parentIds && t.parentIds[0];
+      const folderTitle = parentId ? folderCache.get(parentId) : null;
+      const path = spaceName + (folderTitle ? ' &gt; ' + escapeHtml(folderTitle) : '');
+      const hrs = effortHours(t).toFixed(1);
+      const statusCls = STATUS_CLASS[t.status] || 'badge-deferred';
+      const statusLbl = STATUS_LABEL[t.status] || t.status || '—';
+      const start = t.dates && t.dates.start;
+      const due = t.dates && t.dates.due;
+      return `
+        <div class="task-card">
+          <div class="task-title">${escapeHtml(t.title || '(sin título)')}</div>
+          <div class="task-path">${path}</div>
+          <div class="task-row">
+            <span class="badge ${statusCls}">${escapeHtml(statusLbl)}</span>
+            <span class="task-effort">${hrs} hrs</span>
+          </div>
+          <div class="task-dates">${fmtTaskDate(start)} → ${fmtTaskDate(due)}</div>
+        </div>`;
+    }).join('');
+    return `
+      <div class="space-group">
+        <div class="space-hdr">
+          <span class="name">${escapeHtml(spaceName)}</span>
+          <span class="count">${items.length} tarea${items.length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="task-grid">${cards}</div>
+      </div>`;
+  }).join('');
+}
+
+// ── BOOTSTRAP ────────────────────────────────────────────────────────────
+async function bootstrap() {
+  updateSprintBadge();
+  document.getElementById('refreshBtn').style.display = 'inline-flex';
+  document.getElementById('forgetBtn').style.display = 'inline-flex';
+  document.getElementById('controls').style.display = 'flex';
+  const status = document.getElementById('connStatus');
+  status.textContent = 'Cargando personas y espacios…';
+  status.className = 'conn-status';
+  try {
+    const [contactList, spaceList] = await Promise.all([loadContacts(), loadSpaces()]);
+    contacts = contactList;
+    spaces = spaceList;
+    renderPersonSelect();
+    status.textContent = `✔ ${contacts.length} personas · ${spaces.length} espacios`;
+    status.className = 'conn-status ok';
+  } catch (e) {
+    if (e.message.includes('401')) {
+      forgetToken();
+      setGateStatus('✖ Token inválido o expirado. Vuelve a conectar.', 'err');
+      showGate();
+      return;
+    }
+    status.textContent = '✖ ' + wrikeErrorMessage(e);
+    status.className = 'conn-status';
+  }
+}
+
+function init() {
+  updateSprintBadge();
+  if (!token) {
+    showGate();
+    return;
+  }
+  bootstrap();
+}
+
+init();
+</script>
+</body>
+</html>
