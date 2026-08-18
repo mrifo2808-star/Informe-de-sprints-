@@ -814,10 +814,11 @@ function taskTableRow(x, i, statusKey) {
   const folderHtml = (x.folderTitle && x.folderPermalink)
     ? `<a class="task-link" href="${escapeHtml(x.folderPermalink)}" target="_blank" rel="noopener">${escapeHtml(x.folderTitle)}</a>`
     : (x.folderTitle ? escapeHtml(x.folderTitle) : '<span style="color:var(--muted)">—</span>');
+  const folderCell = folderHtml;
   const tablero = getTaskTablero(t);
-  const folderCell = tablero
-    ? `${folderHtml}<br><small style="color:var(--muted);font-size:10px">${escapeHtml(tablero)}</small>`
-    : folderHtml;
+  const cursoCell = tablero
+    ? escapeHtml(tablero)
+    : '<span style="color:var(--muted)">—</span>';
 
   // Área badge
   const area = getTaskArea(t);
@@ -850,6 +851,7 @@ function taskTableRow(x, i, statusKey) {
     <td>${titleHtml}</td>
     <td>${escapeHtml(x.spaceTitle)}</td>
     <td>${folderCell}</td>
+    <td>${cursoCell}</td>
     <td>${areaBadge}</td>
     <td class="col-effort">${hrs}</td>
     <td>${dateCell}</td>
@@ -887,7 +889,7 @@ function taskTableHtml(entries, statusKey) {
         <table class="task-table">
           <thead><tr>
             <th>#</th><th>Tarea</th><th>Espacio</th><th>Carpeta / Proyecto</th>
-            <th>Área</th><th>Esfuerzo</th><th>${dateHeader}</th>
+            <th>Curso</th><th>Área</th><th>Esfuerzo</th><th>${dateHeader}</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -1023,7 +1025,7 @@ function exportExcel() {
         'Nombre de tarea': t.title || '',
         'Espacio': x.spaceTitle,
         'Carpeta/Proyecto': x.folderTitle || '',
-        'Código de proyecto': getTaskTablero(t),
+        'Curso': getTaskTablero(t),
         'Esfuerzo (hrs)': Number(effortHours(t).toFixed(1)),
         'Fecha inicio': taskStartYmd(t) || '',
         'Fecha término': taskDueYmd(t) || '',
